@@ -98,7 +98,7 @@ function domToHast(domNode) {
 function parseWithDOMParser(html) {
   const parser = new DOMParser();
   const doc = parser.parseFromString(`<body>${html}</body>`, 'text/html');
-  const body = doc.body;
+  const { body } = doc;
 
   // Convert to HAST-like structure
   return {

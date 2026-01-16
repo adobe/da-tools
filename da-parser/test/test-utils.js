@@ -26,7 +26,7 @@ const isNode = typeof window === 'undefined';
 // Re-export expect from chai (works in both environments)
 // In browser: @esm-bundle/chai is loaded
 // In Node.js: chai is loaded
-let expect;
+let expect; // eslint-disable-line import/no-mutable-exports
 if (isNode) {
   const chai = await import('chai');
   expect = chai.expect;
@@ -47,8 +47,8 @@ async function readTestFile(path) {
     const { fileURLToPath } = await import('node:url');
 
     // Get the directory of the test file
-    const __dirname = nodePath.dirname(fileURLToPath(import.meta.url));
-    const fullPath = nodePath.join(__dirname, path);
+    const dirname = nodePath.dirname(fileURLToPath(import.meta.url));
+    const fullPath = nodePath.join(dirname, path);
     return fs.readFile(fullPath, 'utf-8');
   }
   // Browser: use @web/test-runner-commands

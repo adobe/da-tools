@@ -9,8 +9,8 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-import { expect, readTestFile } from './test-utils.js';
 import * as Y from 'yjs';
+import { expect, readTestFile } from './test-utils.js';
 import { aem2doc, doc2aem } from '../src/parser.js';
 
 const collapseTagWhitespace = (str) => str.replace(/>\s+</g, '><');

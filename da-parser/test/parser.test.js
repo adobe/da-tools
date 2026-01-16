@@ -9,8 +9,8 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-import { expect, readTestFile } from './test-utils.js';
 import * as Y from 'yjs';
+import { expect, readTestFile } from './test-utils.js';
 import {
   aem2doc, doc2aem, tableToBlock, EMPTY_DOC,
 } from '../src/parser.js';
@@ -1180,5 +1180,4 @@ describe('Parsing test suite', () => {
     expect(result).to.include('da-diff-added');
     expect(result).to.include('Content inside old loc-added tag');
   });
-
 });
