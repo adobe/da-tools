@@ -1,0 +1,16 @@
+{
+  "name": "da-tools",
+  "version": "1.0.0",
+  "description": "Collection of tools for the DA (Document Authoring) platform",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "da-parser"
+  ],
+  "scripts": {
+    "test": "npm test --workspaces",
+    "lint": "npm run lint --workspaces"
+  },
+  "author": "",
+  "license": "Apache-2.0"
+}
