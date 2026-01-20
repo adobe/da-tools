@@ -21,15 +21,8 @@ export {
   EMPTY_DOC,
 } from './parser.js';
 
-// Re-export yjs for consumers to use the same instance
-export * as Y from 'yjs';
-
 // Re-export y-prosemirror functions for consumers
 export {
   prosemirrorToYXmlFragment,
   yDocToProsemirror,
 } from 'y-prosemirror';
-
-// Re-export y-protocols for consumers to use the same yjs instance
-export * as syncProtocol from 'y-protocols/sync.js';
-export * as awarenessProtocol from 'y-protocols/awareness.js';

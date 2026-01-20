@@ -73,11 +73,8 @@ isKnownHTMLTag('custom-element'); // false
 | `EMPTY_DOC` | Empty document HTML template |
 | `getSchema()` | Get the ProseMirror schema |
 | `isKnownHTMLTag(tag)` | Check if tag is a known HTML element |
-| `Y` | Re-exported yjs module |
 | `prosemirrorToYXmlFragment` | Re-exported from y-prosemirror |
 | `yDocToProsemirror` | Re-exported from y-prosemirror |
-| `syncProtocol` | Re-exported from y-protocols/sync |
-| `awarenessProtocol` | Re-exported from y-protocols/awareness |
 
 ## Development
 
