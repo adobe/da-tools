@@ -182,7 +182,7 @@ describe('Parsing test suite', () => {
 
     html = collapseWhitespace(html);
     const yDoc = new Y.Doc();
-    await aem2doc(html, yDoc);
+    aem2doc(html, yDoc);
     const result = doc2aem(yDoc);
     const expected = await readTestFile('./mocks/expected-table.html');
     expect(collapseWhitespace(result)).to.equal(collapseWhitespace(expected));
@@ -216,7 +216,7 @@ describe('Parsing test suite', () => {
     </body>`;
     html = collapseWhitespace(html);
     const yDoc = new Y.Doc();
-    await aem2doc(html, yDoc);
+    aem2doc(html, yDoc);
     const result = doc2aem(yDoc);
     expect(collapseWhitespace(result)).to.equal(collapseWhitespace(html));
   });
@@ -240,7 +240,7 @@ describe('Parsing test suite', () => {
       <footer></footer>
     </body>`;
 
-    await aem2doc(baseHtml, yDoc);
+    aem2doc(baseHtml, yDoc);
 
     // Now manually apply the contextHighlightingMark to some text in the ydoc
     // We need to import the necessary ProseMirror utilities
