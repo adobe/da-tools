@@ -39,7 +39,7 @@ describe('Parsing test suite', () => {
 
     html = collapseWhitespace(html);
     const yDoc = new Y.Doc();
-    await aem2doc(html, yDoc);
+    aem2doc(html, yDoc);
     const result = doc2aem(yDoc);
     expect(collapseWhitespace(result)).to.equal(html);
   });
@@ -65,7 +65,7 @@ describe('Parsing test suite', () => {
     html = collapseWhitespace(html);
 
     const yDoc = new Y.Doc();
-    await aem2doc(html, yDoc);
+    aem2doc(html, yDoc);
     const result = doc2aem(yDoc);
     expect(collapseWhitespace(result)).to.equal(html);
   });
@@ -79,7 +79,7 @@ describe('Parsing test suite', () => {
 </body>
 `;
     const yDoc = new Y.Doc();
-    await aem2doc(html, yDoc);
+    aem2doc(html, yDoc);
     const result = doc2aem(yDoc);
     console.log(result);
     expect(result).to.equal(html);
@@ -101,7 +101,7 @@ describe('Parsing test suite', () => {
 </body>
 `;
     const yDoc = new Y.Doc();
-    await aem2doc(html, yDoc);
+    aem2doc(html, yDoc);
     const result = doc2aem(yDoc);
     expect(result).to.equal(expectedResult);
   });
@@ -122,7 +122,7 @@ describe('Parsing test suite', () => {
 </body>
 `;
     const yDoc = new Y.Doc();
-    await aem2doc(html, yDoc);
+    aem2doc(html, yDoc);
     const result = doc2aem(yDoc);
     expect(result).to.equal(expectedResult);
   });
@@ -136,7 +136,7 @@ describe('Parsing test suite', () => {
 </body>
 `;
     const yDoc = new Y.Doc();
-    await aem2doc(html, yDoc);
+    aem2doc(html, yDoc);
     const result = doc2aem(yDoc);
     expect(result).to.equal(html);
   });
@@ -150,7 +150,7 @@ describe('Parsing test suite', () => {
 </body>
 `;
     const yDoc = new Y.Doc();
-    await aem2doc(html, yDoc);
+    aem2doc(html, yDoc);
     const result = doc2aem(yDoc);
     expect(result).to.equal(html);
   });
@@ -164,7 +164,7 @@ describe('Parsing test suite', () => {
 </body>
 `;
     const yDoc = new Y.Doc();
-    await aem2doc(html, yDoc);
+    aem2doc(html, yDoc);
     const result = doc2aem(yDoc);
     expect(result).to.equal(html);
   });
@@ -178,7 +178,7 @@ describe('Parsing test suite', () => {
 </body>
 `;
     const yDoc = new Y.Doc();
-    await aem2doc(html, yDoc);
+    aem2doc(html, yDoc);
     const result = doc2aem(yDoc);
     expect(result).to.equal(html);
   });
@@ -192,7 +192,7 @@ describe('Parsing test suite', () => {
 </body>
 `;
     const yDoc = new Y.Doc();
-    await aem2doc(html, yDoc);
+    aem2doc(html, yDoc);
     const result = doc2aem(yDoc);
     expect(result).to.equal(html);
   });
@@ -205,7 +205,7 @@ describe('Parsing test suite', () => {
 </body>
 `;
     const yDoc = new Y.Doc();
-    await aem2doc(html, yDoc);
+    aem2doc(html, yDoc);
     const result = doc2aem(yDoc);
     expect(result).to.equal(html);
   });
@@ -218,7 +218,7 @@ describe('Parsing test suite', () => {
 </body>
 `;
     const yDoc = new Y.Doc();
-    await aem2doc(html, yDoc);
+    aem2doc(html, yDoc);
     const result = doc2aem(yDoc);
     console.log(result);
     expect(result).to.equal(html);
@@ -232,7 +232,7 @@ describe('Parsing test suite', () => {
 </body>
 `;
     const yDoc = new Y.Doc();
-    await aem2doc(html, yDoc);
+    aem2doc(html, yDoc);
     const result = doc2aem(yDoc);
     console.log(result);
     expect(result).to.equal(html);
@@ -247,7 +247,7 @@ describe('Parsing test suite', () => {
 </body>
 `;
     const yDoc = new Y.Doc();
-    await aem2doc(html, yDoc);
+    aem2doc(html, yDoc);
     const result = doc2aem(yDoc);
     console.log(result);
     expect(result).to.equal(html);
@@ -271,7 +271,7 @@ describe('Parsing test suite', () => {
 </body>
 `;
     const yDoc = new Y.Doc();
-    await aem2doc(html, yDoc);
+    aem2doc(html, yDoc);
     const result = doc2aem(yDoc);
     console.log(result);
     expect(result).to.equal(expected);
@@ -343,7 +343,7 @@ describe('Parsing test suite', () => {
       `;
     html = collapseWhitespace(html);
     const yDoc = new Y.Doc();
-    await aem2doc(html, yDoc);
+    aem2doc(html, yDoc);
     const result = collapseWhitespace(doc2aem(yDoc));
     expect(result).to.equal(html);
   });
@@ -357,7 +357,7 @@ describe('Parsing test suite', () => {
 </body>
 `;
     const yDoc = new Y.Doc();
-    await aem2doc(html, yDoc);
+    aem2doc(html, yDoc);
     const result = doc2aem(yDoc);
     console.log(result);
     expect(result).to.equal(html);
@@ -379,7 +379,7 @@ describe('Parsing test suite', () => {
 </body>
 `;
     const yDoc = new Y.Doc();
-    await aem2doc(htmlIn, yDoc);
+    aem2doc(htmlIn, yDoc);
     const result = doc2aem(yDoc);
     console.log(result);
     expect(result, 'The horizontal line should have been converted to a section break').to.equal(htmlOut);
@@ -476,7 +476,7 @@ describe('Parsing test suite', () => {
 
     html = collapseWhitespace(html);
     const yDoc = new Y.Doc();
-    await aem2doc(html, yDoc);
+    aem2doc(html, yDoc);
     const result = doc2aem(yDoc);
     expect(collapseWhitespace(result)).to.equal(html);
   });
@@ -502,7 +502,7 @@ describe('Parsing test suite', () => {
 
     html = collapseWhitespace(html);
     const yDoc = new Y.Doc();
-    await aem2doc(html, yDoc);
+    aem2doc(html, yDoc);
     const result = doc2aem(yDoc);
     expect(collapseWhitespace(result)).to.equal(html);
   });
@@ -533,7 +533,7 @@ describe('Parsing test suite', () => {
 
     html = collapseWhitespace(html);
     const yDoc = new Y.Doc();
-    await aem2doc(html, yDoc);
+    aem2doc(html, yDoc);
     const result = doc2aem(yDoc);
     expect(collapseWhitespace(result)).to.equal(html);
   });
@@ -557,7 +557,7 @@ describe('Parsing test suite', () => {
   <footer></footer>
 </body>`;
     const yDoc = new Y.Doc();
-    await aem2doc(html, yDoc);
+    aem2doc(html, yDoc);
     const result = doc2aem(yDoc);
     expect(collapseWhitespace(result)).to.equal(collapseWhitespace(html));
   });
@@ -587,7 +587,7 @@ describe('Parsing test suite', () => {
   <footer></footer>
 </body>`;
     const yDoc = new Y.Doc();
-    await aem2doc(html, yDoc);
+    aem2doc(html, yDoc);
     const result = doc2aem(yDoc);
     expect(collapseWhitespace(result)).to.equal(collapseWhitespace(html));
   });
@@ -595,7 +595,7 @@ describe('Parsing test suite', () => {
   it('can parse empty doc', async () => {
     const html = EMPTY_DOC;
     const yDoc = new Y.Doc();
-    await aem2doc(html, yDoc);
+    aem2doc(html, yDoc);
     const result = doc2aem(yDoc);
     expect(collapseWhitespace(result)).to.equal(collapseWhitespace(EMPTY_DOC));
   });
@@ -603,7 +603,7 @@ describe('Parsing test suite', () => {
   it('can parse null', async () => {
     const html = null;
     const yDoc = new Y.Doc();
-    await aem2doc(html, yDoc);
+    aem2doc(html, yDoc);
     const result = doc2aem(yDoc);
     expect(collapseWhitespace(result)).to.equal(collapseWhitespace(EMPTY_DOC));
   });
@@ -611,7 +611,7 @@ describe('Parsing test suite', () => {
   it('can parse no main - results should remain unchanged - doc2aem wraps content into main', async () => {
     const html = '<body><div><p>Hello</p></div><footer><p>World</p></footer></body>';
     const yDoc = new Y.Doc();
-    await aem2doc(html, yDoc);
+    aem2doc(html, yDoc);
     const result = doc2aem(yDoc);
     expect(collapseWhitespace(result)).to.equal(collapseWhitespace('<body><header></header><main><div><p>Hello</p><p>World</p></div></main><footer></footer></body>'));
   });
@@ -619,7 +619,7 @@ describe('Parsing test suite', () => {
   it('Test strikethrough and underline schema', async () => {
     const html = '<p>Hello <s>strikethrough</s> and <u>underline</u> text</p>';
     const yDoc = new Y.Doc();
-    await aem2doc(html, yDoc);
+    aem2doc(html, yDoc);
     const result = doc2aem(yDoc);
     expect(result).to.include('<s>strikethrough</s>');
     expect(result).to.include('<u>underline</u>');
@@ -645,7 +645,7 @@ describe('Parsing test suite', () => {
     `;
 
     const yDoc = new Y.Doc();
-    await aem2doc(html, yDoc);
+    aem2doc(html, yDoc);
 
     // Verify delHashes is stored in yDoc
     const yMap = yDoc.getMap('daMetadata');
@@ -672,7 +672,7 @@ describe('Parsing test suite', () => {
     `;
 
     const yDoc = new Y.Doc();
-    await aem2doc(html, yDoc);
+    aem2doc(html, yDoc);
     const result = doc2aem(yDoc);
 
     // Verify delHashes is in the output
@@ -701,7 +701,7 @@ describe('Parsing test suite', () => {
     `;
 
     const yDoc = new Y.Doc();
-    await aem2doc(html, yDoc);
+    aem2doc(html, yDoc);
 
     // Verify it's stored correctly
     const yMap = yDoc.getMap('daMetadata');
@@ -713,7 +713,7 @@ describe('Parsing test suite', () => {
 
     // Do another round-trip to ensure consistency
     const yDoc2 = new Y.Doc();
-    await aem2doc(result, yDoc2);
+    aem2doc(result, yDoc2);
     const result2 = doc2aem(yDoc2);
 
     expect(result2).to.include(`<div class="da-metadata"><div><div>delHashes</div><div>${delHashesValue}</div></div></div>`);
@@ -733,7 +733,7 @@ describe('Parsing test suite', () => {
     `;
 
     const yDoc = new Y.Doc();
-    await aem2doc(html, yDoc);
+    aem2doc(html, yDoc);
 
     // Verify delHashes is undefined (not set in yMap)
     const yMap = yDoc.getMap('daMetadata');
@@ -764,7 +764,7 @@ describe('Parsing test suite', () => {
     `;
 
     const yDoc = new Y.Doc();
-    await aem2doc(html, yDoc);
+    aem2doc(html, yDoc);
 
     // Verify delHashes is undefined (empty element has no text node)
     const yMap = yDoc.getMap('daMetadata');
@@ -792,7 +792,7 @@ describe('Parsing test suite', () => {
     `;
 
     const yDoc = new Y.Doc();
-    await aem2doc(html, yDoc);
+    aem2doc(html, yDoc);
 
     const yMap = yDoc.getMap('daMetadata');
     expect(yMap.get('delHashes')).to.equal(delHashesValue);
@@ -811,7 +811,7 @@ describe('Parsing test suite', () => {
 `;
 
     const yDoc = new Y.Doc();
-    await aem2doc(htmlIn, yDoc);
+    aem2doc(htmlIn, yDoc);
 
     expect(yDoc.getXmlFragment('prosemirror').toString(), 'The text should have been un-escaped').to.equal('<paragraph>AAAA</paragraph><paragraph><hihi>hoho</hihi>aha<p>yes</p></paragraph><paragraph>ZZ & ZZ</paragraph>');
 
@@ -855,7 +855,7 @@ describe('Parsing test suite', () => {
   </body>`;
 
     const yDoc = new Y.Doc();
-    await aem2doc(htmlIn, yDoc);
+    aem2doc(htmlIn, yDoc);
     const result = doc2aem(yDoc);
 
     const htmlOut = `
@@ -912,7 +912,7 @@ describe('Parsing test suite', () => {
     `;
 
     const yDoc = new Y.Doc();
-    await aem2doc(html, yDoc);
+    aem2doc(html, yDoc);
     const result = doc2aem(yDoc);
 
     // Verify da-metadata element comes after footer
@@ -941,7 +941,7 @@ describe('Parsing test suite', () => {
     `;
 
     const yDoc = new Y.Doc();
-    await aem2doc(html, yDoc);
+    aem2doc(html, yDoc);
 
     const yMap = yDoc.getMap('daMetadata');
     expect(yMap.get('locKeys')).to.equal('key1,key2,key3');
@@ -964,7 +964,7 @@ describe('Parsing test suite', () => {
 </body>
     `;
 
-    await aem2doc(html, yDoc);
+    aem2doc(html, yDoc);
     const result = doc2aem(yDoc);
 
     expect(result).to.include('<div><div>locKeys</div><div>test-key-1,test-key-2</div></div>');
@@ -998,7 +998,7 @@ describe('Parsing test suite', () => {
     `;
 
     const yDoc = new Y.Doc();
-    await aem2doc(html, yDoc);
+    aem2doc(html, yDoc);
 
     const yMap = yDoc.getMap('daMetadata');
     expect(yMap.get('delHashes')).to.equal('hash123');
@@ -1031,7 +1031,7 @@ describe('Parsing test suite', () => {
     `;
 
     const yDoc = new Y.Doc();
-    await aem2doc(html, yDoc);
+    aem2doc(html, yDoc);
 
     const yMap = yDoc.getMap('daMetadata');
     expect(yMap.get('customElement')).to.equal('value123');
@@ -1043,7 +1043,7 @@ describe('Parsing test suite', () => {
   it('Test regional edit table parsing', async () => {
     const html = await readTestFile('./mocks/regional-edit-1.html');
     const yDoc = new Y.Doc();
-    await aem2doc(html, yDoc);
+    aem2doc(html, yDoc);
     const result = doc2aem(yDoc);
     expect(collapseWhitespace(result.trim())).to.equal(collapseWhitespace(html.trim()));
   });
@@ -1051,7 +1051,7 @@ describe('Parsing test suite', () => {
   it('Test image link with img tag inside link', async () => {
     const html = '<a href="/test-link" title="Test Title"><img src="/test-image.jpg" alt="Test Image"></a>';
     const yDoc = new Y.Doc();
-    await aem2doc(html, yDoc);
+    aem2doc(html, yDoc);
     const result = doc2aem(yDoc);
     // Test that the processing works without errors
     expect(result.length).to.be.greaterThan(0);
@@ -1060,7 +1060,7 @@ describe('Parsing test suite', () => {
   it('Test image link processing with img tag', async () => {
     const html = '<a href="/test-link" title="Test Title"><img src="/test-image.jpg" alt="Test Image"></a>';
     const yDoc = new Y.Doc();
-    await aem2doc(html, yDoc);
+    aem2doc(html, yDoc);
     const result = doc2aem(yDoc);
     // Test that the image link processing works
     expect(result).to.satisfy((r) => r.includes('img') || r.includes('picture'));
@@ -1080,7 +1080,7 @@ describe('Parsing test suite', () => {
     `;
 
     const yDoc = new Y.Doc();
-    await aem2doc(html, yDoc);
+    aem2doc(html, yDoc);
 
     // The fixImageLinks function should have moved href and title to the img properties
     // We can verify this by checking that the conversion worked without errors
@@ -1113,7 +1113,7 @@ describe('Parsing test suite', () => {
 </body>
 `;
     const yDoc = new Y.Doc();
-    await aem2doc(html, yDoc);
+    aem2doc(html, yDoc);
     const result = doc2aem(yDoc);
 
     // The block group should be wrapped in da-diff-added
@@ -1143,7 +1143,7 @@ describe('Parsing test suite', () => {
 </body>
 `;
     const yDoc = new Y.Doc();
-    await aem2doc(html, yDoc);
+    aem2doc(html, yDoc);
     const result = doc2aem(yDoc);
 
     // Should still process without error - block-group-start wraps remaining elements
@@ -1173,7 +1173,7 @@ describe('Parsing test suite', () => {
 </body>
 `;
     const yDoc = new Y.Doc();
-    await aem2doc(html, yDoc);
+    aem2doc(html, yDoc);
     const result = doc2aem(yDoc);
 
     // da-loc-added should be converted to da-diff-added

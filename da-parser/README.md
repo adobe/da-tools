@@ -40,7 +40,7 @@ const html = `<body>
 </body>`;
 
 const ydoc = new Y.Doc();
-await aem2doc(html, ydoc);
+aem2doc(html, ydoc);
 ```
 
 ### Converting YDoc back to AEM HTML
