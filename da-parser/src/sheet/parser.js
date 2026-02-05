@@ -102,20 +102,16 @@ export function yToJSheet(ysheets, canWrite = true) {
  */
 function rowToY(row) {
   const yrow = new Y.XmlElement('row');
-  row.forEach((cellValue, idx) => {
+  const cellCount = Math.max(row.length, MIN_DIMENSIONS);
+  const cells = new Array(cellCount);
+  
+  for (let i = 0; i < cellCount; i += 1) {
     const ycell = new Y.XmlElement('cell');
-    ycell.setAttribute('value', String(cellValue || ''));
-    yrow.insert(idx, [ycell]);
-  });
-
-  if (row.length < MIN_DIMENSIONS) {
-    for (let i = row.length; i < MIN_DIMENSIONS; i += 1) {
-      const ycell = new Y.XmlElement('cell');
-      ycell.setAttribute('value', '');
-      yrow.insert(i, [ycell]);
-    }
+    ycell.setAttribute('value', String(row[i] ?? ''));
+    cells[i] = ycell;
   }
-
+  
+  yrow.insert(0, cells); // Single batch insert
   return yrow;
 }
 
