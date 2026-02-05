@@ -11,7 +11,7 @@
  */
 
 // Schema exports
-export { getSchema, isKnownHTMLTag } from './schema.js';
+export { getSchema, isKnownHTMLTag } from './doc/schema.js';
 
 // Parser/conversion exports
 export {
@@ -19,7 +19,12 @@ export {
   doc2aem,
   tableToBlock,
   EMPTY_DOC,
-} from './parser.js';
+} from './doc/parser.js';
+
+export {
+  yToJSheet,
+  jSheetToY,
+} from './sheet/parser.js';
 
 // Re-export y-prosemirror functions for consumers
 export {
