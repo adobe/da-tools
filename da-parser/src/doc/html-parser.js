@@ -18,9 +18,9 @@
 
 // For Workers/Node.js: import hast-util-from-html at module load time (not per-call)
 // This is tree-shaken out in browser builds since the code path isn't used
-let hastUtilFromHtmlModule;
+let fromHtml;
 if (typeof DOMParser === 'undefined') {
-  hastUtilFromHtmlModule = import('hast-util-from-html');
+  ({ fromHtml } = await import('hast-util-from-html'));
 }
 
 /**
@@ -112,14 +112,13 @@ function parseWithDOMParser(html) {
  * Workers/Node.js: uses pre-loaded hast-util-from-html (async)
  * Browser: uses native DOMParser (sync)
  */
-async function parseHTML(html) {
-  if (hastUtilFromHtmlModule) {
-    // Workers/Node.js path - module is pre-loaded, await resolves immediately after first call
-    const { fromHtml } = await hastUtilFromHtmlModule;
+function parseHTML(html) {
+  if (fromHtml) {
     return fromHtml(html, { fragment: true });
   }
   // Browser path - sync DOMParser
   return parseWithDOMParser(html);
 }
 
-export { parseHTML };
+// Export domToHast for testing purposes (not part of public API)
+export { parseHTML, domToHast };

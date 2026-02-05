@@ -330,7 +330,7 @@ function convertCustomTagsIntoText(node, parent) {
   return node;
 }
 
-export async function aem2doc(html, ydoc) {
+export function aem2doc(html, ydoc) {
   if (!html) {
     html = EMPTY_DOC;
   }
@@ -338,7 +338,7 @@ export async function aem2doc(html, ydoc) {
     html = convertLocTags(html);
   }
 
-  const tree = await parseHTML(html);
+  const tree = parseHTML(html);
   const daMetadataEl = tree.children.find(
     (child) => child.tagName === 'div' && child.properties?.className?.includes('da-metadata'),
   );
