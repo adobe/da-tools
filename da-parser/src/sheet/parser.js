@@ -57,7 +57,7 @@ export function yToJSheet(ysheets, canWrite = true) {
 
     // Get minDimensions - it was wrapped in array, so unwrap it
     const yMinDimensions = ysheet.get('minDimensions');
-    if (yMinDimensions && yMinDimensions.length > 0) {
+    if (yMinDimensions?.length > 0) {
       [sheet.minDimensions] = yMinDimensions.toArray();
     }
 
