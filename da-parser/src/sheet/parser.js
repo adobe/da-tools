@@ -149,20 +149,22 @@ export function dataArrayToY(data, ydata) {
  * @returns {Object} - Object containing ydoc and ysheets array
  */
 export function jSheetToY(sheets, ydoc, deleteExisting = false) {
+  const ysheets = ydoc.getArray('sheets');
+  
   ydoc.transact(() => {
-    if (deleteExisting) {
-      ydoc.getArray('sheets').delete(0, ydoc.getArray('sheets').length);
+    if (deleteExisting && ysheets.length > 0) {
+      ysheets.delete(0, ysheets.length);
     }
 
-    const ysheets = ydoc.getArray('sheets');
-
-    sheets.forEach((sheet) => {
+    const sheetMaps = new Array(sheets.length);
+    
+    for (let s = 0; s < sheets.length; s += 1) {
+      const sheet = sheets[s];
       const ysheet = new Y.Map();
 
       // Set basic properties
       ysheet.set('sheetName', sheet.sheetName);
 
-      // Set minDimensions - wrap in array to push as single element
       const yMinDimensions = new Y.Array();
       if (sheet.minDimensions) {
         yMinDimensions.push([sheet.minDimensions]);
@@ -175,22 +177,26 @@ export function jSheetToY(sheets, ydoc, deleteExisting = false) {
       dataArrayToY(sheet.data, ydata);
       ysheet.set('data', ydata);
 
-      // Convert columns array to Y.Array of Y.Maps
       const ycolumns = new Y.Array();
       if (sheet.columns) {
-        sheet.columns.forEach((col) => {
+        const colMaps = new Array(sheet.columns.length);
+        for (let i = 0; i < sheet.columns.length; i += 1) {
           const ycol = new Y.Map();
-          Object.entries(col).forEach(([key, value]) => {
-            ycol.set(key, value);
-          });
-          ycolumns.push([ycol]);
-        });
+          const keys = Object.keys(sheet.columns[i]);
+          for (let k = 0; k < keys.length; k += 1) {
+            ycol.set(keys[k], sheet.columns[i][keys[k]]);
+          }
+          colMaps[i] = ycol;
+        }
+        ycolumns.push(colMaps);
       }
       ysheet.set('columns', ycolumns);
 
-      ysheets.push([ysheet]);
-    });
+      sheetMaps[s] = ysheet;
+    }
+
+    ysheets.push(sheetMaps);
   });
 
-  return ydoc.getArray('sheets');
+  return ysheets;
 }
