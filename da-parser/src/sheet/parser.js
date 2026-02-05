@@ -127,20 +127,14 @@ export function dataArrayToY(data, ydata) {
     ydata.delete(0, ydata.length);
   }
 
-  // Populate with new data
-  if (data) {
-    data.forEach((row, idx) => {
-      const yrow = rowToY(row);
-      ydata.insert(idx, [yrow]);
-    });
+  const rowCount = Math.max(data?.length ?? 0, MIN_DIMENSIONS);
+  const rows = new Array(rowCount);
+  
+  for (let i = 0; i < rowCount; i += 1) {
+    rows[i] = rowToY(data?.[i] ?? []);
   }
-
-  if (data?.length < MIN_DIMENSIONS) {
-    for (let i = data.length; i < MIN_DIMENSIONS; i += 1) {
-      const yrow = rowToY([]);
-      ydata.insert(i, [yrow]);
-    }
-  }
+  
+  ydata.insert(0, rows);
 }
 
 /**
