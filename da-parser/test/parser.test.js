@@ -13,7 +13,7 @@ import * as Y from 'yjs';
 import { expect, readTestFile } from './test-utils.js';
 import {
   aem2doc, doc2aem, tableToBlock, EMPTY_DOC,
-} from '../src/parser.js';
+} from '../src/doc/parser.js';
 
 const collapseTagWhitespace = (str) => str.replace(/>\s+</g, '><');
 const collapseWhitespace = (str) => collapseTagWhitespace(str.replace(/\s+/g, ' ')).trim();

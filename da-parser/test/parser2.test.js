@@ -11,7 +11,7 @@
  */
 import * as Y from 'yjs';
 import { expect, readTestFile } from './test-utils.js';
-import { aem2doc, doc2aem } from '../src/parser.js';
+import { aem2doc, doc2aem } from '../src/doc/parser.js';
 
 const collapseTagWhitespace = (str) => str.replace(/>\s+</g, '><');
 const collapseWhitespace = (str) => collapseTagWhitespace(str.replace(/\s+/g, ' ')).trim();
@@ -245,7 +245,7 @@ describe('Parsing test suite', () => {
     // Now manually apply the contextHighlightingMark to some text in the ydoc
     // We need to import the necessary ProseMirror utilities
     const { prosemirrorToYXmlFragment, yDocToProsemirror } = await import('y-prosemirror');
-    const { getSchema } = await import('../src/schema.js');
+    const { getSchema } = await import('../src/doc/schema.js');
 
     const schema = getSchema();
     const pmDoc = yDocToProsemirror(schema, yDoc);

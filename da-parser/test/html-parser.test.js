@@ -12,7 +12,7 @@
 /* eslint-disable no-unused-expressions */
 
 import { expect, isNode } from './test-utils.js';
-import { matches, parseHTML, domToHast } from '../src/html-parser.js';
+import { matches, parseHTML, domToHast } from '../src/doc/html-parser.js';
 
 /**
  * Create a mock DOM text node
