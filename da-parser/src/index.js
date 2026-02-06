@@ -22,9 +22,13 @@ export {
 } from './doc/parser.js';
 
 export {
-  yToJSheet,
-  jSheetToY,
+  json2doc,
+  doc2json,
 } from './sheet/parser.js';
+
+export { yToJSheet } from './sheet/y2j.js';
+export { jSheetToY, dataArrayToY } from './sheet/j2y.js';
+export { MIN_DIMENSIONS as MIN_SHEET_DIMENSIONS } from './sheet/aem2j.js';
 
 // Re-export y-prosemirror functions for consumers
 export {
