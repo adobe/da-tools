@@ -14,6 +14,7 @@ import { expect } from '@esm-bundle/chai';
 import * as Y from 'yjs';
 import { jSheetToY } from '../src/sheet/j2y.js';
 import { yToJSheet } from '../src/sheet/y2j.js';
+import { json2doc, doc2json } from '../src/sheet/parser.js';
 
 describe('Sheet Parser - jSheetToY', () => {
   it('converts simple jSheet to Y', () => {
@@ -193,5 +194,50 @@ describe('Sheet Parser - yToJSheet', () => {
       { width: 50, readOnly: true },
       { width: 200, readOnly: true },
     ]);
+  });
+});
+
+describe('idempotency', () => {
+  it('converts jSheet to Y and back to jSheet', () => {
+    const ydoc = new Y.Doc();
+
+    const sheets = [
+      {
+        sheetName: 'sheet1',
+        data: [['A', 'B', 'C'], ['D', 'E', 'F'], ['G', 'H', 'I']],
+      },
+    ];
+
+    jSheetToY(sheets, ydoc);
+
+    const jsheets = yToJSheet(ydoc.getArray('sheets'));
+    expect(jsheets.length).to.equal(1);
+    expect(jsheets[0].sheetName).to.equal('sheet1');
+    expect(jsheets[0].data).to.deep.equal([
+      ['A', 'B', 'C', ...Array(17).fill('')],
+      ['D', 'E', 'F', ...Array(17).fill('')],
+      ['G', 'H', 'I', ...Array(17).fill('')],
+      ...Array(17).fill([...Array(20).fill('')]),
+    ]);
+  });
+
+  it('converts json2doc and doc2json', () => {
+    const aemJson = {
+      ':type': 'sheet',
+      ':sheetname': 'sheet1',
+      ':colWidths': [100, 100, 100, ...Array(17).fill('50')],
+      total: 1,
+      limit: 1,
+      offset: 0,
+      data: [{
+        key: 'foo',
+        value: 'bar',
+      }],
+    };
+
+    const ydoc = new Y.Doc();
+    json2doc(aemJson, ydoc);
+    const json = doc2json(ydoc);
+    expect(JSON.parse(json)).to.deep.equal(aemJson);
   });
 });

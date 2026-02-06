@@ -13,24 +13,7 @@
 import * as YDefault from 'yjs';
 import { MIN_DIMENSIONS } from './aem2j.js';
 
-/**
- * Get the Y namespace from a ydoc.
- * Since Yjs doesn't expose the Y namespace directly from the document,
- * this function falls back to the default import. For reliable Y instance
- * matching, pass the YNamespace parameter explicitly.
- * @param {Y.Doc} _ - The Yjs document (currently unused, kept for API consistency)
- * @returns {*} The Y namespace (defaults to imported Y)
- */
-function getYFromDoc(_) {
-  // Note: In Yjs, ydoc.constructor is Y.Doc, not the Y namespace itself.
-  // We can't reliably extract the Y namespace from the document,
-  // so we fall back to the default import. Callers should pass YNamespace
-  // parameter if they need to use a specific Y instance (e.g., from da-y-wrapper).
-  return YDefault;
-}
-
-function rowToY(row, ydoc, YNamespace = null) {
-  const Y = YNamespace || getYFromDoc(ydoc);
+function rowToY(row, Y = YDefault) {
   const yrow = new Y.XmlElement('row');
   const cellCount = Math.max(row.length, MIN_DIMENSIONS);
   const cells = new Array(cellCount);
@@ -45,7 +28,7 @@ function rowToY(row, ydoc, YNamespace = null) {
   return yrow;
 }
 
-export function dataArrayToY(data, ydata, ydoc, YNamespace = null) {
+export function dataArrayToY(data, ydata, Y = YDefault) {
   // Clear existing data
   if (ydata.length > 0) {
     ydata.delete(0, ydata.length);
@@ -53,57 +36,55 @@ export function dataArrayToY(data, ydata, ydoc, YNamespace = null) {
 
   const rowCount = Math.max(data?.length ?? 0, MIN_DIMENSIONS);
   const rows = new Array(rowCount);
-  const Y = YNamespace || getYFromDoc(ydoc);
 
   for (let i = 0; i < rowCount; i += 1) {
-    rows[i] = rowToY(data?.[i] ?? [], ydoc, Y);
+    rows[i] = rowToY(data?.[i] ?? [], Y);
   }
 
   ydata.insert(0, rows);
 }
 
-export function jSheetToY(sheets, ydoc, deleteExisting = false, YNamespace = null) {
+export function jSheetToY(sheets, ydoc, deleteExisting = false, Y = YDefault) {
   const ysheets = ydoc.getArray('sheets');
 
   if (deleteExisting && ysheets.length > 0) {
     ysheets.delete(0, ysheets.length);
   }
 
-  const Y = YNamespace || getYFromDoc(ydoc);
-  sheets.forEach((sheet) => {
-    const ysheet = new Y.Map();
+  const sheetMaps = new Array(sheets.length);
 
+  for (let s = 0; s < sheets.length; s += 1) {
+    const sheet = sheets[s];
+    const ysheet = new Y.Map();
     // Set basic properties
     ysheet.set('sheetName', sheet.sheetName);
-
-    // Set minDimensions - wrap in array to push as single element
     const yMinDimensions = new Y.Array();
     if (sheet.minDimensions) {
       yMinDimensions.push([sheet.minDimensions]);
     }
     ysheet.set('minDimensions', yMinDimensions);
-
     // Convert data array using helper function
     // Data should already be padded by getSheet
     const ydata = new Y.XmlFragment();
-    dataArrayToY(sheet.data, ydata, ydoc, Y);
+    dataArrayToY(sheet.data, ydata, Y);
     ysheet.set('data', ydata);
-
-    // Convert columns array to Y.Array of Y.Maps
     const ycolumns = new Y.Array();
     if (sheet.columns) {
-      sheet.columns.forEach((col) => {
+      const colMaps = new Array(sheet.columns.length);
+      for (let i = 0; i < sheet.columns.length; i += 1) {
         const ycol = new Y.Map();
-        Object.entries(col).forEach(([key, value]) => {
-          ycol.set(key, value);
-        });
-        ycolumns.push([ycol]);
-      });
+        const keys = Object.keys(sheet.columns[i]);
+        for (let k = 0; k < keys.length; k += 1) {
+          ycol.set(keys[k], sheet.columns[i][keys[k]]);
+        }
+        colMaps[i] = ycol;
+      }
+      ycolumns.push(colMaps);
     }
     ysheet.set('columns', ycolumns);
-
-    ysheets.push([ysheet]);
-  });
+    sheetMaps[s] = ysheet;
+  }
+  ysheets.push(sheetMaps);
 
   return ysheets;
 }
