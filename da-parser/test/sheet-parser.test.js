@@ -12,7 +12,8 @@
 
 import { expect } from '@esm-bundle/chai';
 import * as Y from 'yjs';
-import { jSheetToY, yToJSheet } from '../src/sheet/parser.js';
+import { jSheetToY } from '../src/sheet/j2y.js';
+import { yToJSheet } from '../src/sheet/y2j.js';
 
 describe('Sheet Parser - jSheetToY', () => {
   it('converts simple jSheet to Y', () => {
