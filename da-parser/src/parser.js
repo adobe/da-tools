@@ -311,7 +311,18 @@ const getMetadata = (metadataTree) => {
   return attrs;
 };
 
-const getAttrString = (attributes) => Object.entries(attributes).map(([key, value]) => ` ${key}="${value}"`).join('');
+const TEXT_ATTRS = new Set(['alt', 'title']);
+
+function encodeAttrValue(value) {
+  return String(value)
+    .replaceAll('&', '&#x26;')
+    .replaceAll('"', '&#x22;')
+    .replaceAll("'", '&#x27;');
+}
+
+const getAttrString = (attributes) => Object.entries(attributes)
+  .map(([key, value]) => ` ${key}="${TEXT_ATTRS.has(key) ? encodeAttrValue(value) : value}"`)
+  .join('');
 
 function convertCustomTagsIntoText(node, parent) {
   if (!node) return node;
@@ -517,7 +528,7 @@ function tohtml(node) {
         delete attributes['da-diff-added'];
 
         attrString = getAttrString(attributes);
-        const titleStr = title ? ` title="${title}"` : '';
+        const titleStr = title ? ` title="${encodeAttrValue(title)}"` : '';
         return `<a href="${href}"${titleStr}${daDiffAddedStr}><picture><source srcset="${src}"><source srcset="${src}" media="(min-width: 600px)"><img${attrString}></picture></a>`;
       }
       return `<picture><source srcset="${src}"><source srcset="${src}" media="(min-width: 600px)"><img${attrString}></picture>`;
