@@ -622,10 +622,21 @@ function convertDiffAddedListTags(listNode) {
   return listNode;
 }
 
+function getText(nameRow) {
+  let node = nameRow;
+  while (node?.children?.length) {
+    [node] = node.children;
+    if (node.type === 'text') {
+      return node.text;
+    }
+  }
+  return '';
+}
+
 export function tableToBlock(child, fragment) {
   const rows = child.children[0].children;
   const nameRow = rows.shift();
-  const className = toBlockCSSClassNames(nameRow.children[0].children[0].children[0]?.text).join(' ');
+  const className = toBlockCSSClassNames(getText(nameRow)).join(' ');
   const block = { type: 'div', attributes: { class: className }, children: [] };
   const { dataId, daDiffAdded } = child.attributes || {};
   if (dataId) block.attributes['data-id'] = dataId;
