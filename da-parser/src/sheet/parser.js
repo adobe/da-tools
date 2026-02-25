@@ -10,28 +10,23 @@
  * governing permissions and limitations under the License.
  */
 
-// Schema exports
-export { getSchema, isKnownHTMLTag } from './doc/schema.js';
+import { jSheetToY } from './j2y.js';
+import { yToJSheet } from './y2j.js';
+import { SHEET_TEMPLATE, aemJson2jSheets } from './aem2j.js';
+import { jSheetToAemJson } from './j2aem.js';
 
-// Parser/conversion exports
-export {
-  aem2doc,
-  doc2aem,
-  tableToBlock,
-  EMPTY_DOC,
-} from './doc/parser.js';
+const EMPTY_JSON = [{ ...SHEET_TEMPLATE }];
 
-export {
-  json2doc,
-  doc2json,
-} from './sheet/parser.js';
+export function json2doc(json, ydoc) {
+  const jsonToConvert = Object.keys(json ?? {}).length === 0 ? EMPTY_JSON : json;
+  const sheets = aemJson2jSheets(jsonToConvert);
+  const ySheets = jSheetToY(sheets, ydoc);
+  return ySheets;
+}
 
-export { yToJSheet } from './sheet/y2j.js';
-export { jSheetToY, dataArrayToY } from './sheet/j2y.js';
-export { MIN_DIMENSIONS as MIN_SHEET_DIMENSIONS } from './sheet/aem2j.js';
+export function doc2json(yDoc) {
+  const ysheets = yDoc.getArray('sheets');
+  const sheets = yToJSheet(ysheets);
 
-// Re-export y-prosemirror functions for consumers
-export {
-  prosemirrorToYXmlFragment,
-  yDocToProsemirror,
-} from 'y-prosemirror';
+  return jSheetToAemJson(sheets);
+}

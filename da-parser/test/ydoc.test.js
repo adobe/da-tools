@@ -12,8 +12,8 @@
 import * as Y from 'yjs';
 import { prosemirrorToYXmlFragment } from 'y-prosemirror';
 import { expect } from './test-utils.js';
-import { doc2aem } from '../src/parser.js';
-import { getSchema } from '../src/schema.js';
+import { doc2aem } from '../src/doc/parser.js';
+import { getSchema } from '../src/doc/schema.js';
 
 const collapseTagWhitespace = (str) => str.replace(/>\s+</g, '><');
 const collapseWhitespace = (str) => collapseTagWhitespace(str.replace(/\s+/g, ' ')).trim();
