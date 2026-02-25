@@ -177,220 +177,215 @@ describe('html-parser.js test suite', () => {
 
   // Browser-only tests for DOMParser code path
   // These tests exercise domToHast and parseWithDOMParser indirectly
-  describe('Browser DOMParser path (browser only)', () => {
-    // Skip these tests in Node.js since DOMParser isn't available
-    before(function skipInNode() {
-      if (isNode) {
-        this.skip();
-      }
-    });
-
-    it('converts text nodes correctly', () => {
-      const result = parseHTML('Hello World');
-      expect(result.type).to.equal('root');
-      // Should have a text node in the tree
-      const hasTextNode = (node) => {
-        if (node.type === 'text' && node.value.includes('Hello World')) return true;
-        if (node.children) {
-          return node.children.some(hasTextNode);
-        }
-        return false;
-      };
-      expect(hasTextNode(result)).to.be.true;
-    });
-
-    it('converts elements with class attribute to className array', () => {
-      const result = parseHTML('<div class="foo bar baz">Content</div>');
-
-      const findDiv = (node) => {
-        if (node.tagName === 'div') return node;
-        if (node.children) {
-          for (const child of node.children) {
-            const found = findDiv(child);
-            if (found) return found;
+  if (!isNode) {
+    describe('Browser DOMParser path (browser only)', () => {
+      it('converts text nodes correctly', () => {
+        const result = parseHTML('Hello World');
+        expect(result.type).to.equal('root');
+        // Should have a text node in the tree
+        const hasTextNode = (node) => {
+          if (node.type === 'text' && node.value.includes('Hello World')) return true;
+          if (node.children) {
+            return node.children.some(hasTextNode);
           }
-        }
-        return null;
-      };
+          return false;
+        };
+        expect(hasTextNode(result)).to.be.true;
+      });
 
-      const div = findDiv(result);
-      expect(div).to.not.be.null;
-      expect(div.properties.className).to.deep.equal(['foo', 'bar', 'baz']);
-    });
+      it('converts elements with class attribute to className array', () => {
+        const result = parseHTML('<div class="foo bar baz">Content</div>');
 
-    it('converts data-* attributes to camelCase', () => {
-      const result = parseHTML('<div data-test-value="123" data-id="abc">Content</div>');
-
-      const findDiv = (node) => {
-        if (node.tagName === 'div') return node;
-        if (node.children) {
-          for (const child of node.children) {
-            const found = findDiv(child);
-            if (found) return found;
+        const findDiv = (node) => {
+          if (node.tagName === 'div') return node;
+          if (node.children) {
+            for (const child of node.children) {
+              const found = findDiv(child);
+              if (found) return found;
+            }
           }
-        }
-        return null;
-      };
+          return null;
+        };
 
-      const div = findDiv(result);
-      expect(div).to.not.be.null;
-      expect(div.properties.dataTestValue).to.equal('123');
-      expect(div.properties.dataId).to.equal('abc');
-    });
+        const div = findDiv(result);
+        expect(div).to.not.be.null;
+        expect(div.properties.className).to.deep.equal(['foo', 'bar', 'baz']);
+      });
 
-    it('converts colspan and rowspan to camelCase', () => {
+      it('converts data-* attributes to camelCase', () => {
+        const result = parseHTML('<div data-test-value="123" data-id="abc">Content</div>');
+
+        const findDiv = (node) => {
+          if (node.tagName === 'div') return node;
+          if (node.children) {
+            for (const child of node.children) {
+              const found = findDiv(child);
+              if (found) return found;
+            }
+          }
+          return null;
+        };
+
+        const div = findDiv(result);
+        expect(div).to.not.be.null;
+        expect(div.properties.dataTestValue).to.equal('123');
+        expect(div.properties.dataId).to.equal('abc');
+      });
+
+      it('converts colspan and rowspan to camelCase', () => {
       // Wrap td in table structure - browsers strip td elements outside tables
-      const result = parseHTML('<table><tr><td colspan="2" rowspan="3">Cell</td></tr></table>');
+        const result = parseHTML('<table><tr><td colspan="2" rowspan="3">Cell</td></tr></table>');
 
-      const findTd = (node) => {
-        if (node.tagName === 'td') return node;
-        if (node.children) {
-          for (const child of node.children) {
-            const found = findTd(child);
-            if (found) return found;
+        const findTd = (node) => {
+          if (node.tagName === 'td') return node;
+          if (node.children) {
+            for (const child of node.children) {
+              const found = findTd(child);
+              if (found) return found;
+            }
           }
-        }
-        return null;
-      };
+          return null;
+        };
 
-      const td = findTd(result);
-      expect(td).to.not.be.null;
-      expect(td.properties.colSpan).to.equal('2');
-      expect(td.properties.rowSpan).to.equal('3');
-    });
+        const td = findTd(result);
+        expect(td).to.not.be.null;
+        expect(td.properties.colSpan).to.equal('2');
+        expect(td.properties.rowSpan).to.equal('3');
+      });
 
-    it('preserves regular attributes as-is', () => {
-      const result = parseHTML('<img src="test.jpg" alt="Test image">');
+      it('preserves regular attributes as-is', () => {
+        const result = parseHTML('<img src="test.jpg" alt="Test image">');
 
-      const findImg = (node) => {
-        if (node.tagName === 'img') return node;
-        if (node.children) {
-          for (const child of node.children) {
-            const found = findImg(child);
-            if (found) return found;
+        const findImg = (node) => {
+          if (node.tagName === 'img') return node;
+          if (node.children) {
+            for (const child of node.children) {
+              const found = findImg(child);
+              if (found) return found;
+            }
           }
-        }
-        return null;
-      };
+          return null;
+        };
 
-      const img = findImg(result);
-      expect(img).to.not.be.null;
-      expect(img.properties.src).to.equal('test.jpg');
-      expect(img.properties.alt).to.equal('Test image');
-    });
+        const img = findImg(result);
+        expect(img).to.not.be.null;
+        expect(img.properties.src).to.equal('test.jpg');
+        expect(img.properties.alt).to.equal('Test image');
+      });
 
-    it('handles deeply nested structures', () => {
-      const result = parseHTML('<div><ul><li><a href="#">Link</a></li></ul></div>');
+      it('handles deeply nested structures', () => {
+        const result = parseHTML('<div><ul><li><a href="#">Link</a></li></ul></div>');
 
-      const findElement = (node, tagName) => {
-        if (node.tagName === tagName) return node;
-        if (node.children) {
-          for (const child of node.children) {
-            const found = findElement(child, tagName);
-            if (found) return found;
+        const findElement = (node, tagName) => {
+          if (node.tagName === tagName) return node;
+          if (node.children) {
+            for (const child of node.children) {
+              const found = findElement(child, tagName);
+              if (found) return found;
+            }
           }
-        }
-        return null;
-      };
+          return null;
+        };
 
-      expect(findElement(result, 'div')).to.not.be.null;
-      expect(findElement(result, 'ul')).to.not.be.null;
-      expect(findElement(result, 'li')).to.not.be.null;
-      expect(findElement(result, 'a')).to.not.be.null;
-    });
+        expect(findElement(result, 'div')).to.not.be.null;
+        expect(findElement(result, 'ul')).to.not.be.null;
+        expect(findElement(result, 'li')).to.not.be.null;
+        expect(findElement(result, 'a')).to.not.be.null;
+      });
 
-    it('handles elements with no attributes', () => {
-      const result = parseHTML('<span>Text</span>');
+      it('handles elements with no attributes', () => {
+        const result = parseHTML('<span>Text</span>');
 
-      const findSpan = (node) => {
-        if (node.tagName === 'span') return node;
-        if (node.children) {
-          for (const child of node.children) {
-            const found = findSpan(child);
-            if (found) return found;
+        const findSpan = (node) => {
+          if (node.tagName === 'span') return node;
+          if (node.children) {
+            for (const child of node.children) {
+              const found = findSpan(child);
+              if (found) return found;
+            }
           }
-        }
-        return null;
-      };
+          return null;
+        };
 
-      const span = findSpan(result);
-      expect(span).to.not.be.null;
-      expect(span.properties).to.deep.equal({});
-    });
+        const span = findSpan(result);
+        expect(span).to.not.be.null;
+        expect(span.properties).to.deep.equal({});
+      });
 
-    it('handles HTML comments', () => {
-      const result = parseHTML('<!-- This is a comment --><p>Text</p>');
-      expect(result.type).to.equal('root');
+      it('handles HTML comments', () => {
+        const result = parseHTML('<!-- This is a comment --><p>Text</p>');
+        expect(result.type).to.equal('root');
 
-      // Check if comment node exists
-      const hasComment = (node) => {
-        if (node.type === 'comment') return true;
-        if (node.children) {
-          return node.children.some(hasComment);
-        }
-        return false;
-      };
-
-      expect(hasComment(result)).to.be.true;
-    });
-
-    it('handles empty class attribute', () => {
-      const result = parseHTML('<div class="">Content</div>');
-
-      const findDiv = (node) => {
-        if (node.tagName === 'div') return node;
-        if (node.children) {
-          for (const child of node.children) {
-            const found = findDiv(child);
-            if (found) return found;
+        // Check if comment node exists
+        const hasComment = (node) => {
+          if (node.type === 'comment') return true;
+          if (node.children) {
+            return node.children.some(hasComment);
           }
-        }
-        return null;
-      };
+          return false;
+        };
 
-      const div = findDiv(result);
-      expect(div).to.not.be.null;
-      // Empty class should result in empty className array
-      expect(div.properties.className).to.deep.equal([]);
-    });
+        expect(hasComment(result)).to.be.true;
+      });
 
-    it('handles mixed content with text and elements', () => {
-      const result = parseHTML('<p>Text <strong>bold</strong> more text</p>');
+      it('handles empty class attribute', () => {
+        const result = parseHTML('<div class="">Content</div>');
 
-      const findP = (node) => {
-        if (node.tagName === 'p') return node;
-        if (node.children) {
-          for (const child of node.children) {
-            const found = findP(child);
-            if (found) return found;
+        const findDiv = (node) => {
+          if (node.tagName === 'div') return node;
+          if (node.children) {
+            for (const child of node.children) {
+              const found = findDiv(child);
+              if (found) return found;
+            }
           }
-        }
-        return null;
-      };
+          return null;
+        };
 
-      const p = findP(result);
-      expect(p).to.not.be.null;
-      expect(p.children.length).to.be.greaterThan(1);
-    });
+        const div = findDiv(result);
+        expect(div).to.not.be.null;
+        // Empty class should result in empty className array
+        expect(div.properties.className).to.deep.equal([]);
+      });
 
-    it('handles whitespace-only text nodes', () => {
-      const result = parseHTML('<div>   </div>');
+      it('handles mixed content with text and elements', () => {
+        const result = parseHTML('<p>Text <strong>bold</strong> more text</p>');
 
-      const findDiv = (node) => {
-        if (node.tagName === 'div') return node;
-        if (node.children) {
-          for (const child of node.children) {
-            const found = findDiv(child);
-            if (found) return found;
+        const findP = (node) => {
+          if (node.tagName === 'p') return node;
+          if (node.children) {
+            for (const child of node.children) {
+              const found = findP(child);
+              if (found) return found;
+            }
           }
-        }
-        return null;
-      };
+          return null;
+        };
 
-      const div = findDiv(result);
-      expect(div).to.not.be.null;
+        const p = findP(result);
+        expect(p).to.not.be.null;
+        expect(p.children.length).to.be.greaterThan(1);
+      });
+
+      it('handles whitespace-only text nodes', () => {
+        const result = parseHTML('<div>   </div>');
+
+        const findDiv = (node) => {
+          if (node.tagName === 'div') return node;
+          if (node.children) {
+            for (const child of node.children) {
+              const found = findDiv(child);
+              if (found) return found;
+            }
+          }
+          return null;
+        };
+
+        const div = findDiv(result);
+        expect(div).to.not.be.null;
+      });
     });
-  });
+  }
 
   // Tests using mock DOM objects to directly test domToHast logic
   // These work in both Node.js and browser environments
@@ -562,29 +557,23 @@ describe('html-parser.js test suite', () => {
   // Tests for parseWithDOMParser path using mock DOMParser
   // Note: In Node.js, parseHTML uses fromHtml, so we test domToHast directly
   // The browser tests above will cover parseWithDOMParser when run in browser
-  describe('parseWithDOMParser coverage via browser tests', () => {
-    // These tests only run in browser environment where DOMParser is available
-    before(function skipInNode() {
-      if (isNode) {
-        this.skip();
-      }
-    });
-
-    it('parseWithDOMParser is called when DOMParser exists', () => {
+  if (!isNode) {
+    describe('parseWithDOMParser coverage via browser tests', () => {
+      it('parseWithDOMParser is called when DOMParser exists', () => {
       // This test exercises parseWithDOMParser through parseHTML in browser
-      const result = parseHTML('<div><p>Test content</p></div>');
-      expect(result.type).to.equal('root');
-      expect(result.children.length).to.be.greaterThan(0);
-    });
+        const result = parseHTML('<div><p>Test content</p></div>');
+        expect(result.type).to.equal('root');
+        expect(result.children.length).to.be.greaterThan(0);
+      });
 
-    it('parseWithDOMParser wraps content in body tag', () => {
-      const result = parseHTML('<span>Wrapped</span>');
-      expect(result.type).to.equal('root');
+      it('parseWithDOMParser wraps content in body tag', () => {
+        const result = parseHTML('<span>Wrapped</span>');
+        expect(result.type).to.equal('root');
       // Content should be parsed and converted to HAST
-    });
+      });
 
-    it('parseWithDOMParser handles complex HTML', () => {
-      const html = `
+      it('parseWithDOMParser handles complex HTML', () => {
+        const html = `
         <div class="container" data-id="main">
           <h1>Title</h1>
           <p class="intro">Paragraph with <strong>bold</strong> text</p>
@@ -594,10 +583,11 @@ describe('html-parser.js test suite', () => {
           </ul>
         </div>
       `;
-      const result = parseHTML(html);
-      expect(result.type).to.equal('root');
+        const result = parseHTML(html);
+        expect(result.type).to.equal('root');
+      });
     });
-  });
+  }
 
   describe('parseHTML() general tests', () => {
     it('parseHTML returns correct structure for simple HTML', () => {

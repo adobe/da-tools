@@ -29,9 +29,31 @@ export default defineConfig([
       },
     },
     rules: {
+      'class-methods-use-this': 0,
       'import/prefer-default-export': 0,
-      'no-console': 'off',
-      'no-param-reassign': 'off',
+
+      'indent': ['error', 2, {
+        ignoredNodes: ['TemplateLiteral *'],
+        SwitchCase: 1,
+      }],
+
+      'max-statements-per-line': ['error', { max: 2 }],
+
+      'no-await-in-loop': 0,
+
+      'no-param-reassign': [2, { props: false }],
+
+      'no-unused-vars': ['error', {
+        argsIgnorePattern: '^_$|^e$',
+        caughtErrorsIgnorePattern: '^_$|^e$',
+        varsIgnorePattern: '^_$|^e$',
+      }],
+
+      'object-curly-newline': ['error', {
+        multiline: true,
+        minProperties: 6,
+        consistent: true,
+      }],
     },
     plugins: {
       import: recommended.plugins.import,
@@ -40,4 +62,12 @@ export default defineConfig([
   },
   source,
   test,
+  {
+    // Allow console in test files
+    files: ['test/**/*.js'],
+    rules: {
+      'no-console': 'off',
+      'no-unused-expressions': 0,
+    },
+  }
 ]);
