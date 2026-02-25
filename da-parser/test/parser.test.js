@@ -44,6 +44,31 @@ describe('Parsing test suite', () => {
     expect(collapseWhitespace(result)).to.equal(html);
   });
 
+  it('bolded classname support', async () => {
+    let html = `
+      <body>
+        <header></header>
+        <main>
+          <div>
+            <div class="hello" data-id="96789">
+              <div>
+                <div><p>Row 1 - Column 1</p></div>
+                <div><p>Row 1 - Column 2</p></div>
+              </div>
+            </div>
+          </div>
+        </main>
+        <footer></footer>
+      </body>
+      `;
+
+    html = collapseWhitespace(html);
+    const yDoc = new Y.Doc();
+    aem2doc(html, yDoc);
+    const result = doc2aem(yDoc);
+    expect(collapseWhitespace(result)).to.equal(html);
+  });
+
   it('DIV block respects colspan', async () => {
     let html = `
       <body>
@@ -418,6 +443,7 @@ describe('Parsing test suite', () => {
   it('Test table with non-empty header', async () => {
     const values = {
       text: 'myblock',
+      type: 'text',
     };
     const p = {
       children: [values],
@@ -1179,5 +1205,30 @@ describe('Parsing test suite', () => {
     // da-loc-added should be converted to da-diff-added
     expect(result).to.include('da-diff-added');
     expect(result).to.include('Content inside old loc-added tag');
+  });
+
+  it('Encodes reserved html characters in alt and title text', async () => {
+    const html = `
+<body>
+  <header></header>
+  <main><div>
+  <picture>
+    <source
+      srcset="https://publish-p107857-e1299068.adobeaemcloud.com/jmp-anthem-thumbnail.png">
+    <source
+      srcset="https://publish-p107857-e1299068.adobeaemcloud.com/jmp-anthem-thumbnail.png"
+      media="(min-width: 600px)"><img
+      src="https://publish-p107857-e1299068.adobeaemcloud.com/jmp-anthem-thumbnail.png" alt="&#x22;hello&#x22; &#x26; <test> &#x27;single&#x27;"  loading="lazy">
+  </picture>
+  <p><a href="https://www.adobe.com" title="&#x22;hello&#x22; &#x26; <test> &#x27;single&#x27;">https://www.adobe.com</a></p>
+  </div></main>
+  <footer></footer>
+</body>
+`;
+
+    const yDoc = new Y.Doc();
+    aem2doc(html, yDoc);
+    const result = doc2aem(yDoc);
+    expect(collapseWhitespace(result)).to.equal(collapseWhitespace(html));
   });
 });
