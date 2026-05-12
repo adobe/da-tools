@@ -12,11 +12,83 @@
 /* eslint-disable no-param-reassign */
 
 import {
-  prosemirrorToYXmlFragment, yDocToProsemirror,
+  prosemirrorToYXmlFragment, yDocToProsemirrorJSON,
 } from 'y-prosemirror';
-import { DOMParser, DOMSerializer } from 'prosemirror-model';
+import { DOMParser, DOMSerializer, Node as PMNode } from 'prosemirror-model';
 import { parseHTML, matches } from './html-parser.js';
 import { getSchema, isKnownHTMLTag } from './schema.js';
+
+// --- Defensive typed-string attr normalization -------------------------------
+// ProseMirror validates node attrs only inside Node.create(). Y.Map writes
+// however land in the Yjs state unvalidated, so an old/buggy client or a
+// direct Yjs integration can deposit a non-string value into a typed-string
+// attr (e.g. image.alt). When doc2aem later reconstructs the doc that
+// triggers RangeError: Expected value of type string,null for attribute alt
+// on type image, got object, which bricks the da-collab worker save loop.
+//
+// Coerce only schema-declared typed string attrs (validate "string" and
+// "string|null") between yDocToProsemirrorJSON() and Node.fromJSON(). Other
+// typed attrs (number, boolean, etc.) are left untouched.
+
+const STRING_VALIDATORS = new Set(['string', 'string|null']);
+const warnedAttrs = new Set();
+
+function getTypedStringAttrSpecs(schema) {
+  const specs = Object.create(null);
+  Object.entries(schema.nodes).forEach(([nodeName, nodeType]) => {
+    const attrSpecs = nodeType.spec.attrs;
+    if (!attrSpecs) return;
+    const nodeSpecs = Object.create(null);
+    Object.entries(attrSpecs).forEach(([attrName, attrSpec]) => {
+      if (!STRING_VALIDATORS.has(attrSpec.validate)) return;
+      nodeSpecs[attrName] = {
+        allowsNull: attrSpec.validate === 'string|null',
+        hasDefault: Object.prototype.hasOwnProperty.call(attrSpec, 'default'),
+      };
+    });
+    if (Object.keys(nodeSpecs).length > 0) specs[nodeName] = nodeSpecs;
+  });
+  return specs;
+}
+
+function coerceNodeAttrs(jsonNode, nodeSpecs, docId) {
+  const { attrs } = jsonNode;
+  Object.entries(nodeSpecs).forEach(([attrName, { allowsNull, hasDefault }]) => {
+    if (!(attrName in attrs)) return;
+    const value = attrs[attrName];
+    if (typeof value === 'string') return;
+    if (value === null || value === undefined) return;
+    const warnKey = `${docId}:${jsonNode.type}:${attrName}`;
+    if (!warnedAttrs.has(warnKey)) {
+      warnedAttrs.add(warnKey);
+      // eslint-disable-next-line no-console
+      console.warn(`[da-parser] doc2aem coerced non-string attr "${attrName}" on <${jsonNode.type}> (doc=${docId})`);
+    }
+    if (allowsNull) {
+      attrs[attrName] = null;
+    } else if (hasDefault) {
+      delete attrs[attrName];
+    } else {
+      // No default, no null allowed: fall back to empty string so Node.fromJSON
+      // does not throw on a required typed string attr (e.g. image.src).
+      attrs[attrName] = '';
+    }
+  });
+}
+
+function sanitizeProsemirrorState(state, schema, docId) {
+  const typedSpecs = getTypedStringAttrSpecs(schema);
+  const walk = (node) => {
+    if (!node || typeof node !== 'object') return;
+    if (node.attrs && node.type && typedSpecs[node.type]) {
+      coerceNodeAttrs(node, typedSpecs[node.type], docId);
+    }
+    if (Array.isArray(node.content)) node.content.forEach(walk);
+  };
+  if (Array.isArray(state?.content)) state.content.forEach(walk);
+  return state;
+}
+// -----------------------------------------------------------------------------
 
 function escapeBrackets(text) {
   return text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
@@ -653,7 +725,9 @@ export function tableToBlock(child, fragment) {
 
 export function doc2aem(ydoc) {
   const schema = getSchema();
-  let json = yDocToProsemirror(schema, ydoc);
+  const state = yDocToProsemirrorJSON(ydoc);
+  sanitizeProsemirrorState(state, schema, ydoc.guid);
+  let json = PMNode.fromJSON(schema, state);
 
   // Restore da attributes from yMap since y-prosemirror doesn't preserve doc-level attrs
   const mdMap = ydoc.getMap('daMetadata');
