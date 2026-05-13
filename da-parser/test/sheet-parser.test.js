@@ -197,6 +197,61 @@ describe('Sheet Parser - yToJSheet', () => {
   });
 });
 
+describe('Sheet Parser - json2doc warnings', () => {
+  let originalWarn;
+  let warnings;
+
+  beforeEach(() => {
+    originalWarn = console.warn;
+    warnings = [];
+    console.warn = (...args) => {
+      warnings.push(args.map((a) => (typeof a === 'string' ? a : String(a))).join(' '));
+    };
+  });
+
+  afterEach(() => {
+    console.warn = originalWarn;
+  });
+
+  it('does not emit "Invalid access" warnings for a single-sheet payload', () => {
+    const aemJson = {
+      ':type': 'sheet',
+      ':sheetname': 'sheet1',
+      total: 1,
+      limit: 1,
+      offset: 0,
+      data: [{ key: 'foo', value: 'bar' }],
+    };
+
+    json2doc(aemJson, new Y.Doc());
+
+    const invalidAccess = warnings.filter((w) => w.includes('Invalid access'));
+    expect(invalidAccess, `Unexpected warnings: ${warnings.join(' | ')}`).to.have.lengthOf(0);
+  });
+
+  it('does not emit "Invalid access" warnings for a three-sheet payload', () => {
+    const sheetBody = (key, value) => ({
+      total: 1,
+      limit: 1,
+      offset: 0,
+      data: [{ key, value }],
+    });
+
+    const aemJson = {
+      ':type': 'multi-sheet',
+      ':names': ['sheet1', 'sheet2', 'sheet3'],
+      sheet1: sheetBody('k1', 'v1'),
+      sheet2: sheetBody('k2', 'v2'),
+      sheet3: sheetBody('k3', 'v3'),
+    };
+
+    json2doc(aemJson, new Y.Doc());
+
+    const invalidAccess = warnings.filter((w) => w.includes('Invalid access'));
+    expect(invalidAccess, `Unexpected warnings: ${warnings.join(' | ')}`).to.have.lengthOf(0);
+  });
+});
+
 describe('idempotency', () => {
   it('converts jSheet to Y and back to jSheet', () => {
     const ydoc = new Y.Doc();
