@@ -29,8 +29,10 @@ function rowToY(row, Y = YDefault) {
 }
 
 export function dataArrayToY(data, ydata, Y = YDefault) {
-  // Clear existing data
-  if (ydata.length > 0) {
+  // Reading .length on a Yjs type that has not yet been integrated into a Y.Doc
+  // emits warnPrematureAccess. A freshly-constructed fragment is always empty,
+  // so skip the clear in that case.
+  if (ydata.doc !== null && ydata.length > 0) {
     ydata.delete(0, ydata.length);
   }
 
