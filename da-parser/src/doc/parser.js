@@ -171,7 +171,9 @@ function fixImageLinks(node) {
 
 function removeComments(node) {
   if (!node) return node;
-  node.children = node.children?.filter((child) => child.type !== 'comment') || [];
+  node.children = node.children?.filter(
+    (child) => child.type !== 'comment' && child.type !== 'doctype',
+  ) || [];
   node.children.forEach(removeComments);
   return node;
 }
@@ -350,6 +352,12 @@ export function aem2doc(html, ydoc) {
   }
 
   const tree = parseHTML(html);
+  // Strip comment/doctype nodes everywhere before walking the tree --
+  // ProseMirror DOMParser cannot see HTML comments through our HAST proxy
+  // (the proxy reports non-text nodes as nodeType 1 with an undefined
+  // nodeName), so a top-level comment in a doc lacking <main> would throw
+  // TypeError: Cannot read properties of undefined (reading toLowerCase).
+  removeComments(tree);
   const daMetadataEl = tree.children.find(
     (child) => child.tagName === 'div' && child.properties?.className?.includes('da-metadata'),
   );
@@ -361,7 +369,6 @@ export function aem2doc(html, ydoc) {
       processDiffTags(main);
     }
     fixImageLinks(main);
-    removeComments(main);
     convertCustomTagsIntoText(main);
     (main.children || []).forEach((section) => {
       if (section.tagName === 'div' && section.children) {
