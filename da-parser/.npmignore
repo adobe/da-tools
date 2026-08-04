@@ -1,0 +1,10 @@
+coverage/
+node_modules/
+junit/
+test/
+docs/
+logs/
+test-results.xml
+renovate.json
+web-test-runner.config.js
+.*
