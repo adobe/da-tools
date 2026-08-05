@@ -13,8 +13,7 @@
     "access": "public"
   },
   "scripts": {
-    "lint:js": "eslint .",
-    "lint": "npm run lint:js",
+    "lint": "eslint .",
     "test": "npm run test:browser && npm run test:node",
     "test:browser": "wtr \"./test/*.test.js\" --node-resolve --coverage",
     "test:node": "c8 mocha \"./test/*.test.js\"",
