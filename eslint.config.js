@@ -54,6 +54,9 @@ export default defineConfig([
         minProperties: 6,
         consistent: true,
       }],
+
+      // match da-nx: allow single-line if/else without braces
+      curly: ['error', 'multi-line'],
     },
     plugins: {
       import: recommended.plugins.import,
@@ -63,11 +66,11 @@ export default defineConfig([
   source,
   test,
   {
-    // Allow console in test files
-    files: ['test/**/*.js'],
+    ...test,
+    files: [...test.files, '**/test/**.js'],
     rules: {
       'no-console': 'off',
       'no-unused-expressions': 0,
     },
-  }
+  },
 ]);
