@@ -227,25 +227,14 @@ const baseNodes = {
   },
 };
 
+// Mark declaration order sets DOM nesting: the earliest-declared mark serializes
+// outermost. `link` must come after em/strong (etc.) so links render innermost —
+// `<em><strong><a>` — matching EDS convention so decorateButtons works.
 const baseMarks = {
-  link: {
-    attrs: {
-      href: {},
-      title: { default: null },
-      ...topLevelAttrs,
-    },
-    inclusive: false,
-    parseDOM: [
-      {
-        tag: 'a[href]',
-        getAttrs(dom) {
-          return { href: dom.getAttribute('href'), title: dom.getAttribute('title'), ...getTopLevelParseAttrs(dom) };
-        },
-      },
-    ],
-    toDOM(node) {
-      const { href, title } = node.attrs;
-      return ['a', { href, title, ...getTopLevelToDomAttrs(node) }, 0];
+  s: {
+    parseDOM: [{ tag: 's' }],
+    toDOM() {
+      return ['s', 0];
     },
   },
   em: {
@@ -273,16 +262,30 @@ const baseMarks = {
       return ['strong', 0];
     },
   },
+  link: {
+    attrs: {
+      href: {},
+      title: { default: null },
+      ...topLevelAttrs,
+    },
+    inclusive: false,
+    parseDOM: [
+      {
+        tag: 'a[href]',
+        getAttrs(dom) {
+          return { href: dom.getAttribute('href'), title: dom.getAttribute('title'), ...getTopLevelParseAttrs(dom) };
+        },
+      },
+    ],
+    toDOM(node) {
+      const { href, title } = node.attrs;
+      return ['a', { href, title, ...getTopLevelToDomAttrs(node) }, 0];
+    },
+  },
   code: {
     parseDOM: [{ tag: 'code' }],
     toDOM() {
       return ['code', 0];
-    },
-  },
-  s: {
-    parseDOM: [{ tag: 's' }],
-    toDOM() {
-      return ['s', 0];
     },
   },
   u: {
@@ -309,8 +312,8 @@ function addCustomMarks(marks) {
   const contextHighlight = { toDOM: () => ['span', { class: 'highlighted-context' }, 0] };
 
   return marks
-    .addToEnd('sup', sup)
     .addToEnd('sub', sub)
+    .addToEnd('sup', sup)
     .addToEnd('contextHighlightingMark', contextHighlight);
 }
 
