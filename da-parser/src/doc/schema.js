@@ -68,10 +68,12 @@ const baseNodes = {
     },
   },
   horizontal_rule: {
+    attrs: { daSectionName: { default: null, validate: 'string|null' } },
     group: 'block',
-    parseDOM: [{ tag: 'hr' }],
-    toDOM() {
-      return ['hr'];
+    parseDOM: [{ tag: 'hr', getAttrs: (dom) => ({ daSectionName: dom.getAttribute('data-section-name') || null }) }],
+    toDOM(node) {
+      const { daSectionName } = node.attrs;
+      return ['hr', daSectionName ? { 'data-section-name': daSectionName } : {}];
     },
   },
   heading: {

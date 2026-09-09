@@ -12,11 +12,97 @@
 import * as Y from 'yjs';
 import { expect, readTestFile } from './test-utils.js';
 import {
-  aem2doc, doc2aem, tableToBlock, EMPTY_DOC,
+  aem2doc, doc2aem, tableToBlock, EMPTY_DOC, FIRST_SECTION_NAME_KEY,
 } from '../src/doc/parser.js';
+import { getSchema } from '../src/doc/schema.js';
+import { yDocToProsemirror } from '../src/index.js';
 
 const collapseTagWhitespace = (str) => str.replace(/>\s+</g, '><');
 const collapseWhitespace = (str) => collapseTagWhitespace(str.replace(/\s+/g, ' ')).trim();
+
+describe('Section names', () => {
+  const roundTrip = (html) => {
+    const ydoc = new Y.Doc();
+    aem2doc(html, ydoc);
+    return { ydoc, out: collapseWhitespace(doc2aem(ydoc)) };
+  };
+
+  it('round trips a name on every section', async () => {
+    const html = `
+      <body>
+        <header></header>
+        <main>
+          <div data-section-name="Hero"><p>one</p></div>
+          <div data-section-name="Features"><p>two</p></div>
+          <div><p>three</p></div>
+        </main>
+        <footer></footer>
+      </body>`;
+
+    const { out } = roundTrip(html);
+    expect(out).to.equal(collapseWhitespace(html));
+  });
+
+  it('keeps the first section name out of the da-metadata block', async () => {
+    const html = `
+      <body>
+        <header></header>
+        <main><div data-section-name="Hero"><p>one</p></div></main>
+        <footer></footer>
+      </body>`;
+
+    const { ydoc, out } = roundTrip(html);
+    expect(ydoc.getMap('daMetadata').get(FIRST_SECTION_NAME_KEY)).to.equal('Hero');
+    expect(out).to.not.contain('da-metadata');
+  });
+
+  it('carries the name on the section-opening rule, not the doc order', async () => {
+    const html = `
+      <body>
+        <header></header>
+        <main>
+          <div><p>one</p></div>
+          <div data-section-name="Features"><p>two</p></div>
+        </main>
+        <footer></footer>
+      </body>`;
+
+    const ydoc = new Y.Doc();
+    aem2doc(html, ydoc);
+    const schema = getSchema();
+    const pmDoc = yDocToProsemirror(schema, ydoc);
+    const rules = [];
+    pmDoc.forEach((node) => {
+      if (node.type === schema.nodes.horizontal_rule) rules.push(node.attrs.daSectionName);
+    });
+    expect(rules).to.deep.equal(['Features']);
+  });
+
+  it('escapes names so they cannot break out of the attribute', async () => {
+    const html = `
+      <body>
+        <header></header>
+        <main><div data-section-name='Say "hi" & <b>bye</b>'><p>one</p></div></main>
+        <footer></footer>
+      </body>`;
+
+    const { out } = roundTrip(html);
+    expect(out).to.contain('data-section-name="Say &quot;hi&quot; &amp; &lt;b&gt;bye&lt;/b&gt;"');
+    expect(collapseWhitespace(roundTrip(out).out)).to.equal(out);
+  });
+
+  it('leaves unnamed sections without the attribute', async () => {
+    const html = `
+      <body>
+        <header></header>
+        <main><div><p>one</p></div><div><p>two</p></div></main>
+        <footer></footer>
+      </body>`;
+
+    const { out } = roundTrip(html);
+    expect(out).to.not.contain('data-section-name');
+  });
+});
 
 describe('Parsing test suite', () => {
   it('table data-id support', async () => {

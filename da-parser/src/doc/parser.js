@@ -94,6 +94,12 @@ function escapeBrackets(text) {
   return text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
 }
 
+function escapeAttr(text) {
+  return escapeBrackets(text).replaceAll('"', '&quot;');
+}
+
+export const FIRST_SECTION_NAME_KEY = 'first-section-name';
+
 function convertSectionBreak(node) {
   if (!node) return;
   if (node.children) {
@@ -484,12 +490,16 @@ export function aem2doc(html, ydoc) {
     main.children = main.children.flatMap((node) => {
       const result = [];
       if (node.tagName === 'div') {
+        const daSectionName = node.properties?.dataSectionName || null;
         if (count > 0) {
+          const hr = getEl('hr');
+          hr.properties['data-section-name'] = daSectionName;
           result.push(getEl('p'));
-          result.push(getEl('hr'));
+          result.push(hr);
           result.push(getEl('p'));
           result.push(...node.children);
         } else {
+          daMetadata[FIRST_SECTION_NAME_KEY] = daSectionName;
           result.push(node);
         }
         count += 1;
@@ -817,10 +827,16 @@ export function doc2aem(ydoc) {
   });
 
   // convert sections
-  const section = { type: 'div', attributes: {}, children: [] };
+  const sectionEl = (daSectionName) => ({
+    type: 'div',
+    attributes: daSectionName ? { 'data-section-name': escapeAttr(daSectionName) } : {},
+    children: [],
+  });
+  const section = sectionEl(daMetadata[FIRST_SECTION_NAME_KEY]);
+  delete daMetadata[FIRST_SECTION_NAME_KEY];
   const sections = [...fragment.children].reduce((acc, child) => {
     if (child.type === 'hr') {
-      acc.push({ type: 'div', attributes: {}, children: [] });
+      acc.push(sectionEl(child.attributes['data-section-name']));
     } else {
       acc[acc.length - 1].children.push(child);
     }
