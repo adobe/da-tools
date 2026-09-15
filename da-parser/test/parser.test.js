@@ -242,7 +242,7 @@ describe('Parsing test suite', () => {
     const html = `
 <body>
   <header></header>
-  <main><div><a href="http://www.foo.com/myimg.jpg" title="Img Alt" data-asset-delivery-type="link-img">http://www.foo.com/myimg.jpg</a></div></main>
+  <main><div><a href="http://www.foo.com/myimg.jpg" title="Img Alt" data-edit-as="image">http://www.foo.com/myimg.jpg</a></div></main>
   <footer></footer>
 </body>
 `;
@@ -259,7 +259,7 @@ describe('Parsing test suite', () => {
     expect(images[0]).to.include({
       src: 'http://www.foo.com/myimg.jpg',
       alt: 'Img Alt',
-      assetDeliveryType: 'link-img',
+      editAs: 'image',
     });
 
     const result = doc2aem(yDoc);
@@ -285,7 +285,7 @@ describe('Parsing test suite', () => {
       if (node.type === schema.nodes.image) images.push(node.attrs);
     });
     expect(images).to.have.lengthOf(1);
-    expect(images[0].assetDeliveryType).to.equal(null);
+    expect(images[0].editAs).to.equal(null);
 
     const result = doc2aem(yDoc);
     expect(result).to.equal(html);

@@ -608,10 +608,10 @@ function tohtml(node) {
         attrString += ' loading="lazy"';
       }
       const { href, src, title } = attributes;
-      if (attributes['data-asset-delivery-type'] === 'link-img') {
+      if (attributes['data-edit-as'] === 'image') {
         const daDiffAddedStr = attributes['da-diff-added'] === '' ? ' da-diff-added=""' : '';
         const titleStr = attributes.alt ? ` title="${encodeAttrValue(attributes.alt)}"` : '';
-        return `<a href="${src}"${titleStr} data-asset-delivery-type="link-img"${daDiffAddedStr}>${escapeBrackets(src)}</a>`;
+        return `<a href="${src}"${titleStr} data-edit-as="image"${daDiffAddedStr}>${escapeBrackets(src)}</a>`;
       }
       if (attributes.href) {
         // hoist link attributes back to <a>

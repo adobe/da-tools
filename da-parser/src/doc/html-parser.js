@@ -34,29 +34,21 @@ function toHastPropName(attr) {
 
 /**
  * Minimal CSS selector matcher for simple selectors used in ProseMirror schema.
- * Supports: tag names ('p', 'div'), attribute presence ('img[src]', 'a[href]'),
- * attribute value matches ('a[data-x="y"]'), and multiple attributes on one tag
- * ('a[data-x="y"][href]').
+ * Supports: tag names ('p', 'div') and attribute presence ('img[src]', 'a[href]',
+ * 'a[data-edit-as]').
  */
 export function matches(selector, node) {
   if (!node || node.type !== 'element') return false;
 
-  const tag = selector.split('[')[0];
-  if (tag && node.tagName !== tag.toLowerCase()) return false;
-
-  const attrRe = /\[([\w-]+)(?:=(?:"([^"]*)"|'([^']*)'|([^\]]*)))?\]/g;
-  let attrMatch = attrRe.exec(selector);
-  if (!attrMatch && selector.includes('[')) return false;
-  while (attrMatch) {
-    const propName = toHastPropName(attrMatch[1]);
-    const expected = attrMatch[2] ?? attrMatch[3] ?? attrMatch[4];
-    const actual = node.properties?.[propName];
-    if (actual == null) return false;
-    if (expected !== undefined && String(actual) !== expected) return false;
-    attrMatch = attrRe.exec(selector);
+  // Handle attribute selector: tag[attr]
+  const attrMatch = selector.match(/^(\w+)\[([\w-]+)\]$/);
+  if (attrMatch) {
+    const [, tag, attr] = attrMatch;
+    return node.tagName === tag && node.properties?.[toHastPropName(attr)] != null;
   }
 
-  return true;
+  // Simple tag match
+  return node.tagName === selector.toLowerCase();
 }
 
 /**
