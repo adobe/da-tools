@@ -1,6 +1,6 @@
 {
   "name": "@adobe/da-parser",
-  "version": "1.2.1",
+  "version": "2.2.0",
   "description": "Parser for converting DA Admin HTML to DA Live ProseMirror/YDoc format",
   "main": "src/index.js",
   "type": "module",

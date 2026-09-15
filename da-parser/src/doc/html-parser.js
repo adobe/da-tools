@@ -23,22 +23,40 @@ if (typeof DOMParser === 'undefined') {
   ({ fromHtml } = await import('hast-util-from-html'));
 }
 
+// Mirrors the HAST property naming used by domToHast() below.
+function toHastPropName(attr) {
+  if (attr === 'class') return 'className';
+  if (attr === 'colspan') return 'colSpan';
+  if (attr === 'rowspan') return 'rowSpan';
+  if (attr.startsWith('data-')) return attr.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+  return attr;
+}
+
 /**
  * Minimal CSS selector matcher for simple selectors used in ProseMirror schema.
- * Supports: tag names ('p', 'div') and attribute presence ('img[src]', 'a[href]')
+ * Supports: tag names ('p', 'div'), attribute presence ('img[src]', 'a[href]'),
+ * attribute value matches ('a[data-x="y"]'), and multiple attributes on one tag
+ * ('a[data-x="y"][href]').
  */
 export function matches(selector, node) {
   if (!node || node.type !== 'element') return false;
 
-  // Handle attribute selector: tag[attr]
-  const attrMatch = selector.match(/^(\w+)\[(\w+)\]$/);
-  if (attrMatch) {
-    const [, tag, attr] = attrMatch;
-    return node.tagName === tag && node.properties?.[attr] != null;
+  const tag = selector.split('[')[0];
+  if (tag && node.tagName !== tag.toLowerCase()) return false;
+
+  const attrRe = /\[([\w-]+)(?:=(?:"([^"]*)"|'([^']*)'|([^\]]*)))?\]/g;
+  let attrMatch = attrRe.exec(selector);
+  if (!attrMatch && selector.includes('[')) return false;
+  while (attrMatch) {
+    const propName = toHastPropName(attrMatch[1]);
+    const expected = attrMatch[2] ?? attrMatch[3] ?? attrMatch[4];
+    const actual = node.properties?.[propName];
+    if (actual == null) return false;
+    if (expected !== undefined && String(actual) !== expected) return false;
+    attrMatch = attrRe.exec(selector);
   }
 
-  // Simple tag match
-  return node.tagName === selector.toLowerCase();
+  return true;
 }
 
 /**

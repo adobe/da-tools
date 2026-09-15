@@ -120,11 +120,24 @@ const baseNodes = {
       href: { default: null, validate: 'string|null' },
       dataFocalX: { default: null, validate: 'string|null' },
       dataFocalY: { default: null, validate: 'string|null' },
+      assetDeliveryType: { default: null, validate: 'string|null' },
       ...topLevelAttrs,
     },
     group: 'inline',
     draggable: true,
     parseDOM: [
+      {
+        tag: 'a[data-asset-delivery-type="link-img"][href]',
+        priority: 60,
+        getAttrs(dom) {
+          return {
+            src: dom.getAttribute('href'),
+            alt: dom.getAttribute('title') || null,
+            assetDeliveryType: 'link-img',
+            ...getTopLevelParseAttrs(dom),
+          };
+        },
+      },
       {
         tag: 'img[src]',
         getAttrs(dom) {
@@ -134,6 +147,7 @@ const baseNodes = {
             href: dom.getAttribute('href'),
             dataFocalX: dom.getAttribute('data-focal-x'),
             dataFocalY: dom.getAttribute('data-focal-y'),
+            assetDeliveryType: dom.getAttribute('data-asset-delivery-type'),
             ...getTopLevelParseAttrs(dom),
           };
           const title = dom.getAttribute('title');
@@ -147,7 +161,7 @@ const baseNodes = {
     ],
     toDOM(node) {
       const {
-        src, alt, title, href, dataFocalX, dataFocalY,
+        src, alt, title, href, dataFocalX, dataFocalY, assetDeliveryType,
       } = node.attrs;
       const attrs = {
         src,
@@ -158,6 +172,7 @@ const baseNodes = {
       };
       if (dataFocalX != null) attrs['data-focal-x'] = dataFocalX;
       if (dataFocalY != null) attrs['data-focal-y'] = dataFocalY;
+      if (assetDeliveryType != null) attrs['data-asset-delivery-type'] = assetDeliveryType;
       // TODO: This is temp code to store the focal data in the title attribute
       // Once helix properly supports data-focal-x and data-focal-y, we can remove this code
       if (dataFocalX != null) attrs.title = `data-focal:${dataFocalX},${dataFocalY}`;

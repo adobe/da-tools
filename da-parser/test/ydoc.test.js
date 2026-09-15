@@ -50,4 +50,50 @@ describe('YDoc to HTML conversion', () => {
 
     expect(collapsed, 'block class name should be "hello" even when text is bolded and italic').to.include('class="hello"');
   });
+
+  it('image node toDOM includes data-asset-delivery-type when assetDeliveryType is set', () => {
+    const schema = getSchema();
+    const imageNode = schema.nodes.image.create({
+      src: 'https://example.com/foo.jpg',
+      alt: 'Alt Text',
+      assetDeliveryType: 'link-img',
+    });
+
+    const [tag, attrs] = schema.nodes.image.spec.toDOM(imageNode);
+    expect(tag).to.equal('img');
+    expect(attrs['data-asset-delivery-type']).to.equal('link-img');
+  });
+
+  it('image node toDOM omits data-asset-delivery-type for normal images', () => {
+    const schema = getSchema();
+    const imageNode = schema.nodes.image.create({
+      src: 'https://example.com/foo.jpg',
+      alt: 'Alt Text',
+    });
+
+    const [, attrs] = schema.nodes.image.spec.toDOM(imageNode);
+    expect(attrs).to.not.have.property('data-asset-delivery-type');
+  });
+
+  it('link-img image node serializes to a plain <a> with title alt, no <picture>', async () => {
+    const schema = getSchema();
+
+    const imageNode = schema.nodes.image.create({
+      src: 'https://example.com/foo.jpg',
+      alt: 'Alt Text',
+      assetDeliveryType: 'link-img',
+    });
+    const pmDoc = schema.nodes.doc.create(null, [
+      schema.nodes.paragraph.create(null, [imageNode]),
+    ]);
+
+    const yDoc = new Y.Doc();
+    prosemirrorToYXmlFragment(pmDoc, yDoc.getXmlFragment('prosemirror'));
+
+    const result = doc2aem(yDoc);
+    const collapsed = collapseWhitespace(result);
+
+    expect(collapsed).to.include('<a href="https://example.com/foo.jpg" title="Alt Text" data-asset-delivery-type="link-img">https://example.com/foo.jpg</a>');
+    expect(collapsed).to.not.include('<picture>');
+  });
 });
