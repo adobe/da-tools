@@ -238,6 +238,59 @@ describe('Parsing test suite', () => {
     expect(result).to.equal(expectedResult);
   });
 
+  it('Test link-img roundtrip', async () => {
+    const html = `
+<body>
+  <header></header>
+  <main><div><p><a href="http://www.foo.com/myimg.jpg" title="Img Alt" data-edit-as="image">http://www.foo.com/myimg.jpg</a></p></div></main>
+  <footer></footer>
+</body>
+`;
+    const yDoc = new Y.Doc();
+    aem2doc(html, yDoc);
+
+    const schema = getSchema();
+    const pmDoc = yDocToProsemirror(schema, yDoc);
+    const images = [];
+    pmDoc.descendants((node) => {
+      if (node.type === schema.nodes.image) images.push(node.attrs);
+    });
+    expect(images).to.have.lengthOf(1);
+    expect(images[0]).to.include({
+      src: 'http://www.foo.com/myimg.jpg',
+      alt: 'Img Alt',
+      editAs: 'image',
+    });
+
+    const result = doc2aem(yDoc);
+    expect(result).to.equal(html);
+    expect(result).to.not.contain('<picture>');
+  });
+
+  it('Test normal image is unaffected by link-img changes', async () => {
+    const html = `
+<body>
+  <header></header>
+  <main><div><picture><source srcset="http://www.foo.com/myimg.jpg"><source srcset="http://www.foo.com/myimg.jpg" media="(min-width: 600px)"><img src="http://www.foo.com/myimg.jpg" alt="Normal Alt" loading="lazy"></picture></div></main>
+  <footer></footer>
+</body>
+`;
+    const yDoc = new Y.Doc();
+    aem2doc(html, yDoc);
+
+    const schema = getSchema();
+    const pmDoc = yDocToProsemirror(schema, yDoc);
+    const images = [];
+    pmDoc.descendants((node) => {
+      if (node.type === schema.nodes.image) images.push(node.attrs);
+    });
+    expect(images).to.have.lengthOf(1);
+    expect(images[0].editAs).to.equal(null);
+
+    const result = doc2aem(yDoc);
+    expect(result).to.equal(html);
+  });
+
   it('Test empty roundtrip', async () => {
     const html = `
 <body>

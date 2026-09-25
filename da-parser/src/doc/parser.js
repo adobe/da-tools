@@ -608,6 +608,11 @@ function tohtml(node) {
         attrString += ' loading="lazy"';
       }
       const { href, src, title } = attributes;
+      if (attributes['data-edit-as'] === 'image') {
+        const daDiffAddedStr = attributes['da-diff-added'] === '' ? ' da-diff-added=""' : '';
+        const titleStr = attributes.alt ? ` title="${encodeAttrValue(attributes.alt)}"` : '';
+        return `<a href="${src}"${titleStr} data-edit-as="image"${daDiffAddedStr}>${escapeBrackets(src)}</a>`;
+      }
       if (attributes.href) {
         // hoist link attributes back to <a>
         delete attributes.href;
@@ -640,8 +645,10 @@ function tohtml(node) {
       return child.text?.trim().length > 0;
     });
 
-    // If we only have images after filtering, unwrap them
-    if (nonEmptyChildren.every((child) => child.type === 'img')) {
+    // If we only have images after filtering, unwrap them. Link-img images serialize
+    // as <a>, so they keep their <p> like a normally authored link.
+    const isPicture = (child) => child.type === 'img' && child.attributes?.['data-edit-as'] !== 'image';
+    if (nonEmptyChildren.every(isPicture)) {
       return children.map((child) => tohtml(child)).join('');
     }
   }
