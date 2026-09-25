@@ -645,8 +645,10 @@ function tohtml(node) {
       return child.text?.trim().length > 0;
     });
 
-    // If we only have images after filtering, unwrap them
-    if (nonEmptyChildren.every((child) => child.type === 'img')) {
+    // If we only have images after filtering, unwrap them. Link-img images serialize
+    // as <a>, so they keep their <p> like a normally authored link.
+    const isPicture = (child) => child.type === 'img' && child.attributes?.['data-edit-as'] !== 'image';
+    if (nonEmptyChildren.every(isPicture)) {
       return children.map((child) => tohtml(child)).join('');
     }
   }

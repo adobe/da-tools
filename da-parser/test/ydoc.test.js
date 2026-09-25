@@ -93,7 +93,7 @@ describe('YDoc to HTML conversion', () => {
     const result = doc2aem(yDoc);
     const collapsed = collapseWhitespace(result);
 
-    expect(collapsed).to.include('<a href="https://example.com/foo.jpg" title="Alt Text" data-edit-as="image">https://example.com/foo.jpg</a>');
+    expect(collapsed).to.include('<p><a href="https://example.com/foo.jpg" title="Alt Text" data-edit-as="image">https://example.com/foo.jpg</a></p>');
     expect(collapsed).to.not.include('<picture>');
   });
 });

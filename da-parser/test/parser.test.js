@@ -242,7 +242,7 @@ describe('Parsing test suite', () => {
     const html = `
 <body>
   <header></header>
-  <main><div><a href="http://www.foo.com/myimg.jpg" title="Img Alt" data-edit-as="image">http://www.foo.com/myimg.jpg</a></div></main>
+  <main><div><p><a href="http://www.foo.com/myimg.jpg" title="Img Alt" data-edit-as="image">http://www.foo.com/myimg.jpg</a></p></div></main>
   <footer></footer>
 </body>
 `;
