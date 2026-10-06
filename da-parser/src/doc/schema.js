@@ -130,8 +130,10 @@ const baseNodes = {
         tag: 'a[data-edit-as]',
         priority: 60,
         getAttrs(dom) {
+          const src = dom.getAttribute('href');
+          if (src == null) return false;
           return {
-            src: dom.getAttribute('href'),
+            src,
             alt: dom.getAttribute('title') || null,
             editAs: 'image',
             ...getTopLevelParseAttrs(dom),

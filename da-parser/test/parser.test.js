@@ -267,6 +267,26 @@ describe('Parsing test suite', () => {
     expect(result).to.not.contain('<picture>');
   });
 
+  it('ignores image editing on anchors without href', () => {
+    const html = `
+<body>
+  <header></header>
+  <main><div><p><a data-edit-as="image">Some text</a></p></div></main>
+  <footer></footer>
+</body>
+`;
+    const yDoc = new Y.Doc();
+    aem2doc(html, yDoc);
+
+    const schema = getSchema();
+    const pmDoc = yDocToProsemirror(schema, yDoc);
+    expect(pmDoc.textContent).to.equal('Some text');
+    pmDoc.descendants((node) => {
+      expect(node.type).to.not.equal(schema.nodes.image);
+    });
+    expect(doc2aem(yDoc)).to.equal(html.replace('<a data-edit-as="image">Some text</a>', 'Some text'));
+  });
+
   it('Test normal image is unaffected by link-img changes', async () => {
     const html = `
 <body>
