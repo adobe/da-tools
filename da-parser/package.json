@@ -44,7 +44,7 @@
     "mocha": "11.8.0"
   },
   "peerDependencies": {
-    "yjs": "13.6.32"
+    "yjs": "13.6.33"
   },
   "dependencies": {
     "hast-util-from-html": "2.0.3",
