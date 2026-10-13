@@ -45,6 +45,41 @@ const getHeadingAttrs = (level) => (dom) => ({
   ...getTopLevelParseAttrs(dom),
 });
 
+// doc2aem parses through a hast shim that camelCases attributes; the browser
+// passes real elements. Read both spellings.
+function suggestionAttr(dom, name) {
+  const camel = name.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+  return dom.getAttribute(name) ?? dom.getAttribute(camel) ?? null;
+}
+
+// Images and blocks carry their suggestion as node attrs: y-prosemirror only keeps marks on text.
+const suggestionNodeAttrs = {
+  suggestion: { default: null, validate: 'string|null' },
+  suggestionUsername: { default: null, validate: 'string|null' },
+  suggestionCreatedAt: { default: null, validate: 'string|null' },
+};
+
+const SUGGESTION_KINDS = new Set(['insert', 'delete']);
+
+const getSuggestionParseAttrs = (dom) => {
+  const suggestion = suggestionAttr(dom, 'data-suggestion');
+  if (!SUGGESTION_KINDS.has(suggestion)) return {};
+  return {
+    suggestion,
+    suggestionUsername: suggestionAttr(dom, 'data-suggestion-username'),
+    suggestionCreatedAt: suggestionAttr(dom, 'data-suggestion-created-at'),
+  };
+};
+
+export const getSuggestionHtmlAttrs = (attrs) => {
+  if (!SUGGESTION_KINDS.has(attrs?.suggestion)) return {};
+  const html = { 'data-suggestion': attrs.suggestion };
+  if (attrs.suggestionUsername) html['data-suggestion-username'] = attrs.suggestionUsername;
+  if (attrs.suggestionCreatedAt) html['data-suggestion-created-at'] = attrs.suggestionCreatedAt;
+  if (attrs.suggestion === 'insert') html['data-mdast'] = 'ignore';
+  return html;
+};
+
 /* Base nodes taken from prosemirror-schema-basic */
 const baseNodes = {
   doc: { content: 'block+' },
@@ -122,6 +157,7 @@ const baseNodes = {
       dataFocalY: { default: null, validate: 'string|null' },
       editAs: { default: null, validate: 'string|null' },
       ...topLevelAttrs,
+      ...suggestionNodeAttrs,
     },
     group: 'inline',
     draggable: true,
@@ -137,6 +173,7 @@ const baseNodes = {
             alt: dom.getAttribute('title') || null,
             editAs: 'image',
             ...getTopLevelParseAttrs(dom),
+            ...getSuggestionParseAttrs(dom),
           };
         },
       },
@@ -151,6 +188,7 @@ const baseNodes = {
             dataFocalY: dom.getAttribute('data-focal-y'),
             editAs: dom.getAttribute('data-edit-as') === 'image' ? 'image' : null,
             ...getTopLevelParseAttrs(dom),
+            ...getSuggestionParseAttrs(dom),
           };
           const title = dom.getAttribute('title');
           // TODO: Remove this once helix properly supports data-focal-x and data-focal-y
@@ -171,6 +209,7 @@ const baseNodes = {
         title,
         href,
         ...getTopLevelToDomAttrs(node),
+        ...getSuggestionHtmlAttrs(node.attrs),
       };
       if (dataFocalX != null) attrs['data-focal-x'] = dataFocalX;
       if (dataFocalY != null) attrs['data-focal-y'] = dataFocalY;
@@ -317,6 +356,35 @@ const baseMarks = {
 
 const baseSchema = new Schema({ nodes: baseNodes, marks: baseMarks });
 
+function suggestionMark(tag) {
+  return {
+    attrs: { username: { default: '' }, createdAt: { default: null }, data: { default: null } },
+    inclusive: false,
+    excludes: tag === 'da-suggestion-added' ? 'suggestion_delete' : 'suggestion_insert',
+    spanning: true,
+    eq: (a, b) => a.attrs.username === b.attrs.username,
+    parseDOM: [{
+      tag,
+      getAttrs(dom) {
+        const createdAt = suggestionAttr(dom, 'data-created-at');
+        return {
+          username: suggestionAttr(dom, 'data-username') || '',
+          createdAt: createdAt ? Number(createdAt) : null,
+          data: null,
+        };
+      },
+    }],
+    toDOM(node) {
+      const attrs = {};
+      if (node.attrs.username) attrs['data-username'] = node.attrs.username;
+      if (node.attrs.createdAt) attrs['data-created-at'] = String(node.attrs.createdAt);
+      // Until accepted, delivery shows the page as if the insertion never happened.
+      if (tag === 'da-suggestion-added') attrs['data-mdast'] = 'ignore';
+      return [tag, attrs, 0];
+    },
+  };
+}
+
 function addCustomMarks(marks) {
   const sup = {
     parseDOM: [{ tag: 'sup' }, { clearMark: (m) => m.type.name === 'sup' }],
@@ -333,13 +401,18 @@ function addCustomMarks(marks) {
   return marks
     .addToEnd('sub', sub)
     .addToEnd('sup', sup)
-    .addToEnd('contextHighlightingMark', contextHighlight);
+    .addToEnd('contextHighlightingMark', contextHighlight)
+    .addToEnd('suggestion_insert', suggestionMark('da-suggestion-added'))
+    .addToEnd('suggestion_delete', suggestionMark('da-suggestion-deleted'));
 }
 
 function getTableNodeSchema() {
   const schema = tableNodes({ tableGroup: 'block', cellContent: 'block+' });
-  schema.table.attrs = { ...topLevelAttrs };
-  schema.table.parseDOM = [{ tag: 'table', getAttrs: getTopLevelParseAttrs }];
+  schema.table.attrs = { ...topLevelAttrs, ...suggestionNodeAttrs };
+  schema.table.parseDOM = [{
+    tag: 'table',
+    getAttrs: (dom) => ({ ...getTopLevelParseAttrs(dom), ...getSuggestionParseAttrs(dom) }),
+  }];
   schema.table.toDOM = (node) => ['table', node.attrs, ['tbody', 0]];
   return schema;
 }
@@ -382,6 +455,7 @@ const KNOWN_HTML_TAGS = [
   'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
   'pre', 'code', 'img', 'br', 'ul', 'ol', 'li', 'table', 'thead', 'tbody', 'tr', 'td', 'th',
   'sup', 'sub', 'da-loc-added', 'da-loc-deleted', 'da-diff-added', 'da-diff-deleted',
+  'da-suggestion-added', 'da-suggestion-deleted',
 ];
 
 export function isKnownHTMLTag(tag) {
