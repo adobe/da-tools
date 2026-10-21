@@ -16,7 +16,7 @@ import {
 } from 'y-prosemirror';
 import { DOMParser, DOMSerializer, Node as PMNode } from 'prosemirror-model';
 import { parseHTML, matches } from './html-parser.js';
-import { getSchema, isKnownHTMLTag } from './schema.js';
+import { getSchema, getSuggestionHtmlAttrs, isKnownHTMLTag } from './schema.js';
 
 // --- Defensive typed-string attr normalization -------------------------------
 // ProseMirror validates node attrs only inside Node.create(). Y.Map writes
@@ -136,6 +136,9 @@ function blockToTable(child, children) {
 
   table.properties.dataId = child.properties.dataId;
   table.properties['da-diff-added'] = child.properties['da-diff-added'];
+  ['dataSuggestion', 'dataSuggestionUsername', 'dataSuggestionCreatedAt'].forEach((prop) => {
+    if (child.properties[prop] != null) table.properties[prop] = child.properties[prop];
+  });
 
   children.push(table);
   const headerRow = {
@@ -611,7 +614,11 @@ function tohtml(node) {
       if (attributes['data-edit-as'] === 'image') {
         const daDiffAddedStr = attributes['da-diff-added'] === '' ? ' da-diff-added=""' : '';
         const titleStr = attributes.alt ? ` title="${encodeAttrValue(attributes.alt)}"` : '';
-        return `<a href="${src}"${titleStr} data-edit-as="image"${daDiffAddedStr}>${escapeBrackets(src)}</a>`;
+        const suggestionStr = Object.entries(attributes)
+          .filter(([name]) => name.startsWith('data-suggestion') || name === 'data-mdast')
+          .map(([name, value]) => ` ${name}="${encodeAttrValue(value)}"`)
+          .join('');
+        return `<a href="${src}"${titleStr} data-edit-as="image"${daDiffAddedStr}${suggestionStr}>${escapeBrackets(src)}</a>`;
       }
       if (attributes.href) {
         // hoist link attributes back to <a>
@@ -737,6 +744,7 @@ export function tableToBlock(child, fragment) {
   const { dataId, daDiffAdded } = child.attributes || {};
   if (dataId) block.attributes['data-id'] = dataId;
   if (daDiffAdded === '') block.attributes['da-diff-added'] = '';
+  Object.assign(block.attributes, getSuggestionHtmlAttrs(child.attributes));
   fragment.children.push(block);
   rows.forEach((row) => {
     const div = { type: 'div', attributes: {}, children: [] };
