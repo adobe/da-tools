@@ -311,6 +311,47 @@ describe('Parsing test suite', () => {
     expect(result).to.equal(html);
   });
 
+  it('Test image focal point roundtrip', async () => {
+    const html = `
+<body>
+  <header></header>
+  <main><div><picture><source srcset="http://www.foo.com/myimg.jpg"><source srcset="http://www.foo.com/myimg.jpg" media="(min-width: 600px)"><img src="http://www.foo.com/myimg.jpg" alt="Focal Alt" title="data-focal:25.00,15.00" data-focal-x="25.00" data-focal-y="15.00" loading="lazy"></picture></div></main>
+  <footer></footer>
+</body>
+`;
+    const yDoc = new Y.Doc();
+    aem2doc(html, yDoc);
+
+    const schema = getSchema();
+    const pmDoc = yDocToProsemirror(schema, yDoc);
+    const images = [];
+    pmDoc.descendants((node) => {
+      if (node.type === schema.nodes.image) images.push(node.attrs);
+    });
+    expect(images).to.have.lengthOf(1);
+    expect(images[0]).to.include({ dataFocalX: '25.00', dataFocalY: '15.00' });
+
+    expect(doc2aem(yDoc)).to.equal(html);
+  });
+
+  it('Test image focal point values are attribute-encoded', async () => {
+    const html = '<body><header></header><main><div><img src="/a.png" data-focal-x="0&quot; onerror=&quot;alert(1)" data-focal-y="0"></div></main><footer></footer></body>';
+    const yDoc = new Y.Doc();
+    aem2doc(html, yDoc);
+    const result = doc2aem(yDoc);
+    expect(result).to.not.contain(' onerror="');
+    expect(result).to.contain('data-focal-x="0&#x22; onerror=&#x22;alert(1)"');
+  });
+
+  it('Test nested section-name values are attribute-encoded', async () => {
+    const html = '<body><header></header><main><div><blockquote><hr data-section-name="&quot;&gt;&lt;img src=x onerror=alert(1)&gt;"></blockquote></div></main><footer></footer></body>';
+    const yDoc = new Y.Doc();
+    aem2doc(html, yDoc);
+    const result = doc2aem(yDoc);
+    expect(result).to.not.contain('data-section-name=""');
+    expect(result).to.contain('<hr data-section-name="&#x22;><img src=x onerror=alert(1)>">');
+  });
+
   it('Test empty roundtrip', async () => {
     const html = `
 <body>

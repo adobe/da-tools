@@ -400,8 +400,10 @@ function encodeAttrValue(value) {
     .replaceAll("'", '&#x27;');
 }
 
+const encodeAttrQuotes = (value) => String(value).replaceAll('"', '&#x22;');
+
 const getAttrString = (attributes) => Object.entries(attributes)
-  .map(([key, value]) => ` ${key}="${TEXT_ATTRS.has(key) ? encodeAttrValue(value) : value}"`)
+  .map(([key, value]) => ` ${key}="${TEXT_ATTRS.has(key) ? encodeAttrValue(value) : encodeAttrQuotes(value)}"`)
   .join('');
 
 function convertCustomTagsIntoText(node, parent) {
@@ -556,11 +558,15 @@ export function aem2doc(html, ydoc) {
           // when `tree` is created using `fromHtml` in hast-util-from-html
           // that then calls fromParse5 in hast-util-from-parse5
           // which converts the `colspan`/`rowspan` attribute to `colSpan`/`rowSpan`
+          // and `data-*` attributes to camelCase (`data-focal-x` -> `dataFocalX`)
           if (name === 'colspan') {
             name = 'colSpan';
           }
           if (name === 'rowspan') {
             name = 'rowSpan';
+          }
+          if (name.startsWith('data-') && target.properties?.[name] === undefined) {
+            name = name.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
           }
           return target.properties ? target.properties[name] : undefined;
         };
