@@ -40,6 +40,10 @@ const getTopLevelParseAttrs = (dom) => ({
   daDiffAdded: dom.getAttribute('da-diff-added') ?? null,
 });
 
+const getDiffKindAttrs = (dom) => ({ diffKind: dom.getAttribute('data-diff-kind') ?? null });
+
+const getDiffKindToDomAttrs = (node) => (node.attrs.diffKind ? { 'data-diff-kind': node.attrs.diffKind } : {});
+
 const getHeadingAttrs = (level) => (dom) => ({
   level,
   ...getTopLevelParseAttrs(dom),
@@ -199,6 +203,7 @@ const baseNodes = {
     toDOM: () => ['da-loc-added', { contenteditable: false }, 0],
   },
   diff_added: {
+    attrs: { diffKind: { default: null, validate: 'string|null' } },
     group: 'block',
     content: 'block+',
     atom: true,
@@ -206,6 +211,7 @@ const baseNodes = {
     parseDOM: [
       {
         tag: 'da-diff-added',
+        getAttrs: getDiffKindAttrs,
         contentElement: (dom) => {
           [...dom.children].forEach((child) => {
             if (child.properties) {
@@ -219,7 +225,7 @@ const baseNodes = {
       // Note: da-loc-added is handled by loc_added node type (defined above),
       // so we don't need a duplicate entry here
     ],
-    toDOM: () => ['da-diff-added', { contenteditable: false }, 0],
+    toDOM: (node) => ['da-diff-added', { contenteditable: false, ...getDiffKindToDomAttrs(node) }, 0],
   },
   loc_deleted: {
     group: 'block',
@@ -230,6 +236,7 @@ const baseNodes = {
     toDOM: () => ['da-loc-deleted', { contenteditable: false }, 0],
   },
   diff_deleted: {
+    attrs: { diffKind: { default: null, validate: 'string|null' } },
     group: 'block',
     content: 'block+',
     atom: true,
@@ -237,12 +244,13 @@ const baseNodes = {
     parseDOM: [
       {
         tag: 'da-diff-deleted',
+        getAttrs: getDiffKindAttrs,
         contentElement: (dom) => dom,
       },
       // Note: da-loc-deleted is handled by loc_deleted node type (defined above),
       // so we don't need a duplicate entry here
     ],
-    toDOM: () => ['da-diff-deleted', { 'data-mdast': 'ignore', contenteditable: false }, 0],
+    toDOM: (node) => ['da-diff-deleted', { 'data-mdast': 'ignore', contenteditable: false, ...getDiffKindToDomAttrs(node) }, 0],
   },
 };
 

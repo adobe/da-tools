@@ -496,6 +496,45 @@ describe('Parsing test suite', () => {
     expect(result).to.equal(html);
   });
 
+  it('round trips data-diff-kind on a deleted and an added block', async () => {
+    const html = `
+<body>
+  <header></header>
+  <main><div><da-diff-deleted data-mdast="ignore" data-diff-kind="conflict"><h1>Up</h1></da-diff-deleted><h1 da-diff-added="" data-diff-kind="conflict">Mine</h1></div></main>
+  <footer></footer>
+</body>
+`;
+    const yDoc = new Y.Doc();
+    aem2doc(html, yDoc);
+    expect(doc2aem(yDoc)).to.equal(html);
+  });
+
+  it('round trips data-diff-kind on an added block', async () => {
+    const html = `
+<body>
+  <header></header>
+  <main><div><p da-diff-added="" data-diff-kind="local">Mine</p></div></main>
+  <footer></footer>
+</body>
+`;
+    const yDoc = new Y.Doc();
+    aem2doc(html, yDoc);
+    expect(doc2aem(yDoc)).to.equal(html);
+  });
+
+  it('round trips data-diff-kind on an added block of a block table', async () => {
+    const html = `
+<body>
+  <header></header>
+  <main><div><div class="cards" da-diff-added="" data-diff-kind="incoming"><div><div><p>Hi</p></div></div></div></div></main>
+  <footer></footer>
+</body>
+`;
+    const yDoc = new Y.Doc();
+    aem2doc(html, yDoc);
+    expect(collapseWhitespace(doc2aem(yDoc))).to.equal(collapseWhitespace(html));
+  });
+
   it('Test regional edit backwards compatibility', async () => {
     // TODO: Remove this test once we no longer support old regional edits
     // Temp code to support old regional edits

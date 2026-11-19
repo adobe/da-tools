@@ -267,12 +267,15 @@ function convertLocTags(html) {
   return html;
 }
 
-const createWrapper = (children) => ({
-  type: 'element',
-  tagName: 'da-diff-added',
-  properties: {},
-  children,
-});
+const createWrapper = (children) => {
+  const dataDiffKind = children[0]?.properties?.dataDiffKind;
+  return {
+    type: 'element',
+    tagName: 'da-diff-added',
+    properties: dataDiffKind ? { dataDiffKind } : {},
+    children,
+  };
+};
 
 const hasDaDiffAdded = (child) => child.type === 'element' && child.properties?.['da-diff-added'] !== undefined;
 
@@ -743,6 +746,7 @@ export function tableToBlock(child, fragment) {
   const { dataId, daDiffAdded } = child.attributes || {};
   if (dataId) block.attributes['data-id'] = dataId;
   if (daDiffAdded === '') block.attributes['da-diff-added'] = '';
+  if (child.attributes?.['data-diff-kind']) block.attributes['data-diff-kind'] = child.attributes['data-diff-kind'];
   fragment.children.push(block);
   rows.forEach((row) => {
     const div = { type: 'div', attributes: {}, children: [] };
@@ -827,6 +831,9 @@ export function doc2aem(ydoc) {
     } else if (child.type === 'da-diff-added') {
       // unwrap the content inside of da-diff-added
       const locChildren = child.children;
+      const diffKind = child.attributes?.['data-diff-kind'];
+      const target = locChildren.find((locChild) => locChild.type === 'table') || locChildren[0];
+      if (diffKind && target) target.attributes['data-diff-kind'] = diffKind;
       locChildren.forEach((locChild) => {
         if (locChild.type === 'table') {
           tableToBlock(locChild, fragment);
