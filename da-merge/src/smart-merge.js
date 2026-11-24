@@ -11,7 +11,7 @@
  */
 /**
  * Block-level three-way merge (diff3 style) used by the smart-overwrite rollout.
- * See docs/rollout-smart-overwrite.md for the rules.
+ * See README.md for the conflict rules and docs/rollout-smart-overwrite.md for the rest.
  */
 
 function tableMatches(a, b) {
@@ -71,6 +71,23 @@ function splitInPlace(hunk) {
   return blocks.map((block, idx) => ({
     start: start + idx, end: start + idx + 1, blocks: [block],
   }));
+}
+
+function alignDeletedSections({ base, blocks, matches }) {
+  const aligned = new Map(matches);
+  let prev = -1;
+  [...matches.keys(), base.length].forEach((next) => {
+    const start = prev + 1;
+    const at = aligned.get(prev);
+    const pure = prev >= 0 && next > start
+      && (next === base.length ? at === blocks.length - 1 : aligned.get(next) === at + 1);
+    if (pure && base[prev] === base[next - 1] && isSection(blocks[at])) {
+      aligned.delete(prev);
+      aligned.set(next - 1, at);
+    }
+    prev = next;
+  });
+  return new Map([...aligned].sort(([x], [y]) => x - y));
 }
 
 function getHunks({
@@ -339,8 +356,22 @@ const withMark = (blocks, mark) => blocks.map((entry) => ({ ...entry, mark }));
 
 const indexesOf = ({ start, end }) => Array.from({ length: end - start }, (_, idx) => start + idx);
 
-// The page wins a conflict; uncertain ones are marked for review (see rollout-smart-overwrite.md).
-function resolveConflict({ cluster, context }) {
+const newToPage = (blocks, { inBase, onPage }) => blocks
+  .filter((entry) => isSection(entry) || !inBase.has(entry.hash) || onPage.has(entry.hash));
+
+function deletesSections({ start, end }, { base, isBaseBreak }) {
+  const closes = (idx) => idx === base.length || isBaseBreak(idx);
+  if (isBaseBreak(start) && closes(end)) return true;
+  return start > 0 && base[start - 1] === base[end - 1]
+    && isBaseBreak(start - 1) && isBaseBreak(end - 1);
+}
+
+const changesBreaks = ({ hunk, context }) => hunk.blocks.some(hasBreak)
+  || (indexesOf(hunk).some(context.isBaseBreak)
+    && (hunk.blocks.length > 0 || !deletesSections(hunk, context)));
+
+// A conflict offers upstream's new units beside the page's version (see README.md).
+function resolveConflict({ cluster, context, emitted }) {
   const { sourceHunks, destHunks } = cluster;
   const { dest, toDest, upstream } = context;
   const count = sourceHunks.length;
@@ -375,30 +406,27 @@ function resolveConflict({ cluster, context }) {
   const destTouched = new Set(destHunks.flatMap(indexesOf));
   const covered = (hunk) => hunk.start < hunk.end && hunk.blocks.length <= hunk.end - hunk.start
     && indexesOf(hunk).every((idx) => destTouched.has(idx));
-  const deletes = sourceHunks.filter((hunk) => !hunk.blocks.length);
   const pageBlocks = destHunks.flatMap((hunk) => hunk.blocks);
-  if (sourceHunks.every(covered)) {
-    if (!deletes.length || !pageBlocks.length) return { blocks: destBlocks, skipped: count };
-    const repeated = deletes.flatMap(indexesOf)
-      .some((idx) => context.baseCounts.get(context.base[idx]) > 1);
-    if (!repeated && !context.addsBlocks) {
-      return { blocks: destBlocks, skipped: count, removedUpstream: deletes.length };
-    }
-    if (pageBlocks.some(hasBreak)) return unmarked;
-    const marked = destHunks.map((hunk) => ({ ...hunk, blocks: withMark(hunk.blocks, 'local') }));
-    return { blocks: keepDest(marked), review: count };
+  if (sourceHunks.every(covered) && !pageBlocks.length) return unmarked;
+  if (sourceHunks.some((hunk) => changesBreaks({ hunk, context }))) return unmarked;
+  if (destBlocks.some((entry) => !isSection(entry) && hasBreak(entry))) return unmarked;
+  const offered = newToPage(sourceHunks.flatMap((hunk) => hunk.blocks), context);
+  const deletes = sourceHunks.filter((hunk) => !hunk.blocks.length);
+  const local = destBlocks.filter((entry) => !isSection(entry));
+  if (!offered.length && (!local.length || !deletes.length)) return unmarked;
+  if (offered.length && !emitted && context.dest.length && isSection(context.dest[0])) {
+    return unmarked;
   }
-  const upstreamBlocks = destRange({
-    ...cluster, hunks: sourceHunks, dest: upstream, toDest: context.toSource,
-  });
-  if ([...upstreamBlocks, ...destBlocks].some(hasBreak)) return unmarked;
+  const marked = destBlocks.map((entry) => (isSection(entry) ? entry : { ...entry, mark: 'local' }));
+  if (offered.length) {
+    return { blocks: [...withMark(offered, 'upstream'), ...marked], review: count };
+  }
   return {
-    blocks: [...withMark(upstreamBlocks, 'upstream'), ...withMark(destBlocks, 'local')],
-    review: count,
+    blocks: marked, review: count, removedUpstream: deletes.length, removed: true,
   };
 }
 
-function resolveCluster({ cluster, context }) {
+function resolveCluster({ cluster, context, emitted }) {
   const { sourceHunks, destHunks, type } = cluster;
   const { dest, toDest } = context;
   const keepDest = () => destRange({
@@ -414,7 +442,7 @@ function resolveCluster({ cluster, context }) {
     }
     return { blocks: mergeInserts(destBlocks, sourceBlocks) };
   }
-  return resolveConflict({ cluster, context });
+  return resolveConflict({ cluster, context, emitted });
 }
 
 const opensEmptySection = (blocks, idx) => isSection(blocks[idx])
@@ -523,30 +551,43 @@ function mergeBlocks({
   } = withoutMoves({
     base, source, dest, applyMoves,
   });
-  const destDiff = getHunks({ base, blocks: dest, side: 'dest' });
+  const destMatches = lcsMatches(base, toHashes(dest));
+  const destDiff = getHunks({
+    base, blocks: dest, side: 'dest', matches: alignDeletedSections({ base, blocks: dest, matches: destMatches }),
+  });
   const sourceDiff = getHunks({
     base, blocks: merged, side: 'source', matches,
   });
   const isBreak = (idx) => [[sourceDiff.matches, merged], [destDiff.matches, dest]]
     .some(([toSide, side]) => toSide.has(idx) && isSection(side[toSide.get(idx)]));
   const clusters = getClusters([...sourceDiff.hunks, ...destDiff.hunks]).map(classify);
-  const misplaced = clusters.filter((cluster, idx) => idx && endsRemovedSection({
-    hunk: cluster.hunks[0], cluster: clusters[idx - 1], isBreak, size: base.length,
-  })).length;
-  const inBase = new Set(base);
-  // Only blocks upstream inserted could be a moved, edited block; in-place edits can't.
-  const inserted = sourceDiff.hunks.filter((hunk) => hunk.blocks.length > hunk.end - hunk.start)
-    .flatMap((hunk) => hunk.blocks);
+  const misplaced = new Set(clusters
+    .map((cluster, idx) => (idx && endsRemovedSection({
+      hunk: cluster.hunks[0], cluster: clusters[idx - 1], isBreak, size: base.length,
+    }) ? idx : -1))
+    .filter((idx) => idx >= 0));
+  const breakHashes = new Set(toHashes([...merged, ...dest].filter(isSection)));
   const context = {
     base,
-    baseCounts: countHashes(base),
+    inBase: new Set(base),
+    onPage: new Set(toHashes(dest)),
+    isBaseBreak: (idx) => isBreak(idx) || breakHashes.has(base[idx]),
     dest,
     toDest: destDiff.matches,
     upstream: merged,
     toSource: sourceDiff.matches,
-    addsBlocks: inserted.some((block) => !isSection(block) && !inBase.has(block.hash)),
     fixed,
     mergeList,
+  };
+  const resolve = (cluster, group, emitted) => {
+    const resolved = resolveCluster({ cluster, context, emitted });
+    if (!misplaced.has(group)) return resolved;
+    if (!emitted || resolved.blocks.some(hasBreak)) {
+      return { ...resolved, skipped: (resolved.skipped || 0) + 1 };
+    }
+    const offered = newToPage(resolved.blocks, context);
+    if (!offered.length) return { blocks: [], skipped: 1 };
+    return { blocks: withMark(offered, 'upstream'), review: cluster.sourceHunks.length };
   };
 
   const blocks = [];
@@ -559,10 +600,13 @@ function mergeBlocks({
     blocks.push(...destRange({
       start: acc.pos, end: cluster.start, hunks: [], dest, toDest: context.toDest,
     }));
-    const resolved = resolveCluster({ cluster, context });
+    const resolved = resolve(cluster, group, blocks.length);
+    const removed = resolved.removed ? { removed: true } : {};
     const tagged = resolved.blocks
       .map((entry) => (entry.mark
-        ? { ...entry, group, baseRange: [cluster.start, cluster.end] } : entry));
+        ? {
+          ...entry, group, baseRange: [cluster.start, cluster.end], ...removed,
+        } : entry));
     blocks.push(...tagged);
     return { pos: cluster.end, ...add(acc, resolved) };
   }, {
@@ -582,7 +626,7 @@ function mergeBlocks({
   }) : { swaps: [], swapsAsBase: [] };
   return {
     blocks: result,
-    skipped: end.skipped + misplaced,
+    skipped: end.skipped,
     review: end.review,
     removedUpstream: end.removedUpstream,
     reordered: swapsAsBase.length > 0,

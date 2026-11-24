@@ -766,13 +766,20 @@ export default function createRegionalDiff({ Node, document }) {
 
   function describeGroups(entries, { nextId, reason, baseline }) {
     const groups = new Map();
-    entries.filter(({ mark }) => mark).forEach(({ group, mark, baseRange }) => {
-      if (!groups.has(group)) groups.set(group, { id: nextId(), marks: new Set(), baseRange });
+    entries.filter(({ mark }) => mark).forEach(({
+      group, mark, baseRange, removed,
+    }) => {
+      if (!groups.has(group)) {
+        groups.set(group, {
+          id: nextId(), marks: new Set(), baseRange, removed,
+        });
+      }
       groups.get(group).marks.add(mark);
     });
     groups.forEach((group) => {
       group.reason = reason;
-      group.kind = group.marks.size > 1 ? KIND.changed : KIND.added;
+      if (group.removed) group.kind = KIND.removed;
+      else group.kind = group.marks.size > 1 ? KIND.changed : KIND.added;
       group.reasonMark = group.marks.has('upstream') ? 'upstream' : 'local';
       group.base = baseline && getBaseContent(group.baseRange, baseline);
     });
@@ -825,8 +832,8 @@ export default function createRegionalDiff({ Node, document }) {
   /**
    * Block-level three-way merge. Applies upstream (source) changes made since the
    * base to the destination, keeping destination edits. When both sides changed
-   * the same region, the destination wins and the change is counted as skipped, or, when
-   * uncertain, counted in `review` with `da-diff-*` markers in `html`.
+   * the same region, the conflict is marked with `da-diff-*` markers in `html` and counted in
+   * `review`, or kept as the destination has it and counted as skipped (see README.md).
    * @param {Object} params
    * @param {String[]} params.base ordered block hashes of the source at the last rollout
    * @param {Document} params.source the current upstream document

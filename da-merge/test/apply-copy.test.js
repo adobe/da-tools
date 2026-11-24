@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 import {
-  expect, daMerge, rawMerge, dom,
+  expect, daMerge, rawMerge, dom, withoutGroups,
 } from './test-utils.js';
 import DaMerge, {
   removeLocTags, formatRolloutBase, getElementMetadata, DA_METADATA_SELECTOR,
@@ -111,6 +111,111 @@ describe('grouped diff markup', () => {
       local,
       local,
     ]);
+  });
+
+  const smartMarkers = async ({ base, source, dest }) => {
+    const hashes = await daMerge.getBlockHashes({ doc: toDoc(base), site, config });
+    const result = await daMerge.smartMerge({
+      base: hashes, source: toDoc(source), dest: toDoc(dest), site, config,
+    });
+    return { ...result, found: markers(result.html) };
+  };
+
+  it('offers both sides when both edited the same unit', async () => {
+    const { found, skipped, review } = await smartMarkers({
+      base: '<div><p>A</p><p>B</p><p>C</p></div>',
+      source: '<div><p>A</p><p>G</p><p>C</p></div>',
+      dest: '<div><p>A</p><p>L</p><p>C</p></div>',
+    });
+    expect(found).to.deep.equal([
+      {
+        group: 'g1', side: 'source', kind: 'changed', reason: 'both-changed',
+      },
+      {
+        group: 'g1', side: 'local', kind: 'changed', reason: null,
+      },
+    ]);
+    expect(skipped).to.equal(0);
+    expect(review).to.equal(true);
+  });
+
+  it('marks a local unit that the source removed as a local-only group of kind removed', async () => {
+    const { found, skipped, removedUpstream } = await smartMarkers({
+      base: '<div><p>A</p><p>B</p><p>C</p></div>',
+      source: '<div><p>A</p><p>C</p></div>',
+      dest: '<div><p>A</p><p>L</p><p>C</p></div>',
+    });
+    expect(found).to.deep.equal([{
+      group: 'g1', side: 'local', kind: 'removed', reason: 'both-changed',
+    }]);
+    expect(skipped).to.equal(0);
+    expect(removedUpstream).to.equal(1);
+  });
+
+  it('offers only the units new to the page as a source-only group of kind added', async () => {
+    const { html, found } = await smartMarkers({
+      base: '<div><h1>H</h1><p>A</p><p>B</p></div>',
+      source: '<div><h1>H</h1><p>A</p><p>Y</p><p>B</p></div>',
+      dest: '<div><h1>H</h1></div>',
+    });
+    expect(found).to.deep.equal([{
+      group: 'g1', side: 'source', kind: 'added', reason: 'both-changed',
+    }]);
+    expect(html).to.include('<da-diff-deleted data-mdast="ignore" data-diff-group="g1" data-diff-side="source" data-diff-kind="added" data-diff-reason="both-changed"><p>Y</p></da-diff-deleted>');
+    expect(html).to.not.include('<p>A</p>');
+  });
+
+  it('offers a source addition to a section the page removed at the end of the section before it', async () => {
+    const { html, found } = await smartMarkers({
+      base: '<div><p>A</p></div><div><p>B</p></div><div><p>C</p></div>',
+      source: '<div><p>A</p></div><div><p>B</p><p>N</p></div><div><p>C</p></div>',
+      dest: '<div><p>A</p></div><div><p>C</p></div>',
+    });
+    expect(found.map(({ side, kind }) => `${side}:${kind}`)).to.deep.equal(['source:added']);
+    expect(withoutGroups(html)).to.equal('<div><p>A</p><da-diff-deleted data-mdast="ignore"><p>N</p></da-diff-deleted></div><div><p>C</p></div>');
+  });
+
+  it('marks the page\'s units when the source deleted a section the page edited', async () => {
+    const { html, found } = await smartMarkers({
+      base: '<div><p>A</p></div><div><p>B</p><p>C</p></div>',
+      source: '<div><p>A</p></div>',
+      dest: '<div><p>A</p></div><div><p>B local</p><p>C</p></div>',
+    });
+    expect(found.map(({ side, kind }) => `${side}:${kind}`)).to.deep.equal(['local:removed', 'local:removed']);
+    expect(withoutGroups(html)).to.equal('<div><p>A</p></div><div><p da-diff-added="">B local</p><p da-diff-added="">C</p></div>');
+  });
+
+  it('keeps the page and counts a skip when the page deleted a unit the source edited', async () => {
+    const { html, found, skipped } = await smartMarkers({
+      base: '<div><p>A</p><p>B</p><p>C</p></div>',
+      source: '<div><p>A</p><p>B2</p><p>C</p></div>',
+      dest: '<div><p>A</p><p>C</p></div>',
+    });
+    expect(found).to.deep.equal([]);
+    expect(html).to.equal('<div><p>A</p><p>C</p></div>');
+    expect(skipped).to.equal(1);
+  });
+
+  it('keeps the page and counts a skip when the source change adds a section break', async () => {
+    const { html, found, skipped } = await smartMarkers({
+      base: '<div><p>A</p><p>B</p><p>C</p></div>',
+      source: '<div><p>A</p></div><div><p>B2</p><p>C</p></div>',
+      dest: '<div><p>A</p><p>B local</p><p>C</p></div>',
+    });
+    expect(found).to.deep.equal([]);
+    expect(html).to.equal('<div><p>A</p><p>B local</p><p>C</p></div>');
+    expect(skipped).to.equal(1);
+  });
+
+  it('keeps the page and counts a skip when both inserted at one spot and one holds a section break', async () => {
+    const { html, found, skipped } = await smartMarkers({
+      base: '<div><p>A</p><p>B</p></div>',
+      source: '<div><p>A</p><p>Y</p></div><div><p>Z</p><p>B</p></div>',
+      dest: '<div><p>A</p><p>N</p><p>B</p></div>',
+    });
+    expect(found).to.deep.equal([]);
+    expect(html).to.equal('<div><p>A</p><p>N</p><p>B</p></div>');
+    expect(skipped).to.equal(1);
   });
 
   it('writes the base content of a conflict when the baseline page is given', async () => {

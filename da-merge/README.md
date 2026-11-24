@@ -67,7 +67,7 @@ if (html) await save(path, html);
 | `merge` | Marks every difference for review (2-way). |
 | `smart-overwrite` | Compares the source and the target with the baseline (3-way). It applies changes made on one side only, and marks only conflicts. Groups that are still open stay as they are. In a list with open items, the other items are merged one by one. |
 
-`report` holds `outcome` (`written`, `unchanged`, `skipped`, `needs-review`), the fallback `reason`, `counts` (`applied`, `keptLocal`, `needsReview`), the conflict `groups`, `skipped` (conflicts left as the page has them), `contentChanged`, and `legacyHashes` (stored hashes matched from before canonicalizing).
+`report` holds `outcome` (`written`, `unchanged`, `skipped`, `needs-review`), the fallback `reason`, `counts` (`applied`, `keptLocal`, `needsReview`), the conflict `groups`, `skipped` (conflicts left as the page has them), `removedUpstream` (source deletions of units the page edited), `contentChanged`, and `legacyHashes` (stored hashes matched from before canonicalizing).
 
 `outcome` is `needs-review` whenever the page has open groups after the copy, even when `html` is `null`. Use `html === null` to tell that nothing was written. `counts.needsReview` counts the open groups on the page to save, or on the target when `html` is `null`. `contentChanged` is `true` when `html` changes the page content, not only its metadata.
 
@@ -92,8 +92,8 @@ Each conflict group has an id. Every marked unit says which side it is from.
 |---|---|
 | `data-diff-group` | `g1`, `g2`, … unique in the page |
 | `data-diff-side` | `source`, `local` |
-| `data-diff-kind` | `changed` (both sides), `added` (one side) |
-| `data-diff-reason` | on the first source unit of a group: `differs`, `both-changed`, `no-baseline`, `page-too-large`, `reviewing-open-markup` |
+| `data-diff-kind` | `changed` (both sides), `added` (one side), `removed` (local side only: the source removed these units) |
+| `data-diff-reason` | on the first source unit of a group, or on the first local unit when the group has no source side: `differs`, `both-changed`, `no-baseline`, `page-too-large`, `reviewing-open-markup` |
 
 `<da-diff-base>` is written only when `baselineHtml` is given. The editors must run a `@adobe/da-parser` that keeps this markup, or their first save drops it.
 
@@ -107,9 +107,32 @@ Each conflict group has an id. Every marked unit says which side it is from.
 
 The lower-level functions (`regionalDiff`, `smartMerge`, `smartRollout`, `getBlockHashes`, …) and helpers such as `removeLocTags` and `LOC_MARKERS` are exported too. They work on parsed documents and do not canonicalize.
 
+## Smart-overwrite conflicts
+
+A conflict is a place where the source and the page both changed since the baseline. The engine asks only about content the author hasn't seen. Notation: baseline → source / page.
+
+| Case (example) | Result |
+|---|---|
+| Both edited the same unit (`A B C` → `A G C` / `A L C`) | One group with both sides: `G` as source, `L` as local, kind `changed`. |
+| The page deleted a unit the source edited (`A B C` → `A B2 C` / `A C`) | The page's version, no markers. Counts in `report.skipped`. |
+| The source deleted a unit the page edited (`A B C` → `A C` / `A L C`) | `L` as a local-only group, kind `removed`. Counts in `report.removedUpstream`. |
+| The source moved and edited a unit the page edited | No move detection: a deletion (as above) plus an insert, which is applied. |
+| The source removed one of two identical units, and the page edited one | As a deletion: the page's unit is marked, the twin stays. |
+| The source's change spans units the page didn't touch (`A B C` → `A2 Y B C` / `L B C`) | One group with both sides. The source side holds only units new to the page: units from the baseline that the page deleted stay deleted (`\| H A B` → `\| H A Y B` / `\| H` offers only `Y`, kind `added`). |
+| The source added units to a section the page removed | The new units as a source-only group, kind `added`, at the end of the section before it. |
+| The source deleted a section the page edited (`\| A \| B C` → `\| A` / `\| A \| Bl C`) | The page's units in that section as a local-only group, kind `removed`. |
+| A conflict where the source's change adds or removes a section break | The page's version, no markers. Counts in `report.skipped`. |
+| Both inserted at one spot, and one insert holds a section break | The page's version, no markers. Counts in `report.skipped`. |
+| New source units would land before the page's first section | The page's version, no markers. Counts in `report.skipped`. |
+
+- Every group has reason `both-changed`.
+- Markers stay inside the page's existing `main > div` sections. Section breaks are never marked.
+- A conflict that touches an open group keeps the page as it is there, and counts in `report.skipped`.
+- Each source change is offered once: the next baseline holds it.
+
 ## Merge rules
 
-The rules come from da-nx: [smart overwrite](https://github.com/adobe/da-nx/blob/main/docs/rollout-smart-overwrite.md) and [loc copy](https://github.com/adobe/da-nx/blob/main/docs/loc-copy.md).
+The other rules come from da-nx: [smart overwrite](https://github.com/adobe/da-nx/blob/main/docs/rollout-smart-overwrite.md) and [loc copy](https://github.com/adobe/da-nx/blob/main/docs/loc-copy.md).
 
 ## Tests
 

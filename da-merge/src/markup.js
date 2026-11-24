@@ -15,7 +15,7 @@ export const DELETED_TAG = 'da-diff-deleted';
 export const BASE_TAG = 'da-diff-base';
 
 export const SIDE = { source: 'source', local: 'local' };
-export const KIND = { added: 'added', changed: 'changed' };
+export const KIND = { added: 'added', changed: 'changed', removed: 'removed' };
 
 export const REASON = {
   differs: 'differs',

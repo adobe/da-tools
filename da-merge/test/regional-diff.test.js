@@ -413,14 +413,15 @@ describe('smartMerge', () => {
     expect(skipped).to.equal(0);
   });
 
-  it('keeps the local version and counts a skip when both edited the same block', async () => {
-    const { html, skipped } = await merge({
+  it('offers the global version beside the local one when both edited the same block', async () => {
+    const { html, skipped, review } = await merge({
       base: '<h1>A</h1><p>B</p><p>C</p>',
       source: '<h1>A</h1><p>B global</p><p>C</p>',
       dest: '<h1>A</h1><p>B local</p><p>C</p>',
     });
-    expect(html).to.equal('<div><h1>A</h1><p>B local</p><p>C</p></div>');
-    expect(skipped).to.equal(1);
+    expect(html).to.equal('<div><h1>A</h1><da-diff-deleted data-mdast="ignore"><p>B global</p></da-diff-deleted><p da-diff-added="">B local</p><p>C</p></div>');
+    expect(skipped).to.equal(0);
+    expect(review).to.be.true;
   });
 
   it('does not count a skip when both sides made the same edit', async () => {
@@ -443,14 +444,15 @@ describe('smartMerge', () => {
     expect(skipped).to.equal(0);
   });
 
-  it('keeps a locally edited block that global deleted', async () => {
-    const { html, skipped } = await merge({
+  it('keeps and marks a locally edited block that global deleted', async () => {
+    const { html, skipped, review } = await merge({
       base: '<p>A</p><p>B</p><p>C</p>',
       source: '<p>A</p><p>C</p>',
       dest: '<p>A</p><p>B local</p><p>C</p>',
     });
-    expect(html).to.equal('<div><p>A</p><p>B local</p><p>C</p></div>');
-    expect(skipped).to.equal(1);
+    expect(html).to.equal('<div><p>A</p><p da-diff-added="">B local</p><p>C</p></div>');
+    expect(skipped).to.equal(0);
+    expect(review).to.be.true;
   });
 
   it('applies a global reorder when the destination is unchanged', async () => {
@@ -511,8 +513,8 @@ describe('smartMerge', () => {
       source: '<p>A2</p><p>B2</p><p>C</p>',
       dest: '<p>A local</p><p>B</p><p>C</p>',
     });
-    expect(html).to.equal('<div><p>A local</p><p>B2</p><p>C</p></div>');
-    expect(skipped).to.equal(1);
+    expect(html).to.equal('<div><da-diff-deleted data-mdast="ignore"><p>A2</p></da-diff-deleted><p da-diff-added="">A local</p><p>B2</p><p>C</p></div>');
+    expect(skipped).to.equal(0);
   });
 
   it('keeps destination blocks in a conflicted region and offers the upstream version beside them', async () => {
