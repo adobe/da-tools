@@ -10,11 +10,13 @@
  * governing permissions and limitations under the License.
  */
 import getElementMetadata from './metadata.js';
-import { LOC_MARKERS, isSnapshotPath } from './regional-diff.js';
+import { LOC_MARKERS, isSnapshotPath, removeLocTags } from './regional-diff.js';
+import { REASON } from './markup.js';
 import { ROLLOUT_BASE_KEY, ROLLOUT_ORDER_KEY, getDiffHash } from './hashes.js';
 
 export const DA_METADATA_SELECTOR = 'body > .da-metadata';
 const EMPTY_TAGS = new Set(['DIV', 'P', 'BR']);
+export const MAX_UNITS = 2000;
 
 const toBasePath = (path) => path.toLowerCase();
 
@@ -122,46 +124,61 @@ export default function createSmartOverwrite({ Node, regional }) {
   }
 
   async function mergeReview({
-    source, dest, metadataEl, site, config, sourceHashes,
+    source, dest, metadataEl, site, config, sourceHashes, reason,
   }) {
+    const unmarked = dest.cloneNode(true);
+    removeLocTags(unmarked);
     const reviewed = getElementMetadata(metadataEl);
     const accepted = reviewed.acceptedhashes?.text?.split(',') || [];
     const rejected = getRejected(metadataEl);
-    const diffed = await regionalDiff(source, dest, accepted, rejected, { site, config });
+    const diffed = await regionalDiff(source, unmarked, accepted, rejected, {
+      site, config, reason,
+    });
     return {
-      html: diffed.innerHTML, skipped: 0, sourceHashes, review: !!diffed.querySelector(LOC_MARKERS),
+      html: diffed.innerHTML,
+      skipped: 0,
+      sourceHashes,
+      review: !!diffed.querySelector(LOC_MARKERS),
+      reason,
     };
   }
 
   // No valid baseline yet: today's merge, so the author reviews every difference once.
   async function firstRollout({
-    source, dest, destHtml, destMarked, metadataEl, site, config,
+    source, dest, metadataEl, site, config,
   }) {
     const sourceHashes = await getBlockHashes({ doc: source, site, config });
-    if (!destMarked) {
+    if (!dest.querySelector(LOC_MARKERS)) {
       const destHashes = await getBlockHashes({ doc: dest, site, config });
       if (sourceHashes.join() === destHashes.join()) {
-        return { html: destHtml, skipped: 0, sourceHashes };
+        return { html: dest.querySelector('body > main').innerHTML, skipped: 0, sourceHashes };
       }
     }
     return mergeReview({
-      source, dest, metadataEl, site, config, sourceHashes,
+      source, dest, metadataEl, site, config, sourceHashes, reason: REASON.noBaseline,
     });
   }
 
   async function smartRollout({
-    source, dest, destHtml, destMarked, empty, path, site, config,
+    source, dest, path, site, config, baselineDoc = null, maxUnits = MAX_UNITS,
   }) {
     if (!dest) return copySource({ source, site, config });
     const metadataEl = dest.querySelector(DA_METADATA_SELECTOR);
     const daMetadata = readMetadata(metadataEl);
     // A snapshot never merges against a sync point: it only keeps the live page's.
     const base = !isSnapshotPath(path) && getRolloutBase(metadataEl, path);
-    if (base && !destMarked) {
+    if (base) {
       const sourceHashes = await getBlockHashes({ doc: source, site, config });
       if (sourceHashes.join() === base.join()) return { unchanged: true, reordered: false };
+      const destHashes = await getBlockHashes({ doc: dest, site, config });
+      if (Math.max(sourceHashes.length, destHashes.length) > maxUnits) {
+        const merged = await mergeReview({
+          source, dest, metadataEl, site, config, sourceHashes, reason: REASON.pageTooLarge,
+        });
+        return { ...merged, reordered: false, daMetadata };
+      }
       const merged = await smartMerge({
-        base, source, dest, rejected: getRejected(metadataEl), site, config,
+        base, source, dest, rejected: getRejected(metadataEl), site, config, baselineDoc,
       });
       const orders = {
         reordered: merged.reordered,
@@ -171,13 +188,14 @@ export default function createSmartOverwrite({ Node, regional }) {
       if (merged.sourceHashes.join() === base.join()) return { unchanged: true, ...orders };
       return { ...merged, ...orders, daMetadata };
     }
-    if (empty) {
+    const main = getSectionedMain(dest);
+    if (main && isEmptyMain(main)) {
       return copySource({
         source, site, config, destMetadataEl: metadataEl,
       });
     }
     const merged = await firstRollout({
-      source, dest, destHtml, destMarked, metadataEl, site, config,
+      source, dest, metadataEl, site, config,
     });
     return { ...merged, daMetadata };
   }

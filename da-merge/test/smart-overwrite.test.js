@@ -9,7 +9,7 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-import { expect, daMerge } from './test-utils.js';
+import { expect, daMerge, sortAttributes } from './test-utils.js';
 import {
   getRolloutBase, formatRolloutBase, isEmptyMain, countLocalBlocks, withBaselineRow,
   readMetadata, getElementMetadata, DA_METADATA_SELECTOR, ROLLOUT_BASE_KEY, ROLLOUT_ORDER_KEY,
@@ -30,15 +30,8 @@ const page = (main, metadata = {}) => daMerge.parse(`<body><header></header><mai
 
 const hashesOf = (doc) => getBlockHashes({ doc, site, config });
 
-const rollout = (source, dest) => smartRollout({
-  source,
-  dest,
-  destHtml: dest?.querySelector('body > main').innerHTML,
-  destMarked: false,
-  empty: false,
-  path: PATH,
-  site,
-  config,
+const rollout = (source, dest, options = {}) => smartRollout({
+  source, dest, path: PATH, site, config, ...options,
 });
 
 describe('smart-overwrite helpers', () => {
@@ -116,8 +109,9 @@ describe('smartRollout', () => {
     const dest = page('<div><p>A local</p><p>B</p></div>');
     const result = await rollout(source, dest);
     expect(result.review).to.equal(true);
-    expect(result.html).to.include('<da-diff-deleted data-mdast="ignore"><p>A</p></da-diff-deleted>');
-    expect(result.html).to.include('<p da-diff-added="">A local</p>');
+    expect(result.reason).to.equal('no-baseline');
+    expect(sortAttributes(result.html)).to.include(sortAttributes('<da-diff-deleted data-mdast="ignore" data-diff-group="g1" data-diff-side="source" data-diff-kind="changed" data-diff-reason="no-baseline"><p>A</p></da-diff-deleted>'));
+    expect(sortAttributes(result.html)).to.include(sortAttributes('<p da-diff-added="" data-diff-group="g1" data-diff-side="local" data-diff-kind="changed">A local</p>'));
   });
 
   it('keeps the target as is on the first copy when it matches the source', async () => {
@@ -129,9 +123,7 @@ describe('smartRollout', () => {
   it('copies the source into an empty target and keeps its review decisions', async () => {
     const source = page('<div><p>A</p><p>B</p></div>', { title: 'Source' });
     const dest = page('<div></div>', { rejectedhashes: 'abcdef012345' });
-    const result = await smartRollout({
-      source, dest, destHtml: '<div></div>', destMarked: false, empty: true, path: PATH, site, config,
-    });
+    const result = await rollout(source, dest);
     expect(result.html).to.equal('<div><p>A</p><p>B</p></div>');
     expect(result.daMetadata).to.deep.equal({ title: 'Source', rejectedhashes: 'abcdef012345' });
   });

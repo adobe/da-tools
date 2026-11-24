@@ -1,0 +1,402 @@
+/*
+ * Copyright 2026 Adobe. All rights reserved.
+ * This file is licensed to you under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License. You may obtain a copy
+ * of the License at http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software distributed under
+ * the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR REPRESENTATIONS
+ * OF ANY KIND, either express or implied. See the License for the specific language
+ * governing permissions and limitations under the License.
+ */
+import { expect, daMerge, rawMerge } from './test-utils.js';
+import {
+  removeLocTags, formatRolloutBase, getElementMetadata, DA_METADATA_SELECTOR,
+} from '../src/index.js';
+
+const PATH = '/org/site/page.html';
+const site = 'site';
+const config = { config: { data: [] } };
+
+const rows = (metadata) => Object.entries(metadata)
+  .map(([key, value]) => `<div><div>${key}</div><div>${value}</div></div>`).join('');
+
+const page = (main, metadata = {}) => `<body><header></header><main>${main}</main>${
+  Object.keys(metadata).length ? `<div class="da-metadata">${rows(metadata)}</div>` : ''
+}<footer></footer></body>`;
+
+const doc = (html, engine = daMerge) => engine.parse(html);
+const mainOf = (html, engine = daMerge) => doc(html, engine).querySelector('body > main').innerHTML;
+const metadataOf = (html) => getElementMetadata(doc(html).querySelector(DA_METADATA_SELECTOR));
+
+const copy = (options, engine = daMerge) => engine.applyCopy({
+  path: PATH, site, config, ...options,
+});
+
+const marker = (el) => ({
+  group: el.getAttribute('data-diff-group'),
+  side: el.getAttribute('data-diff-side'),
+  kind: el.getAttribute('data-diff-kind'),
+  reason: el.getAttribute('data-diff-reason'),
+});
+
+const markers = (html, engine = daMerge) => [...doc(`<body><main>${html}</main></body>`, engine)
+  .querySelectorAll('da-diff-deleted, [da-diff-added], da-diff-added')].map(marker);
+
+const resolveAsMine = (html) => {
+  const resolved = doc(html);
+  removeLocTags(resolved);
+  return resolved.body.outerHTML;
+};
+
+describe('grouped diff markup', () => {
+  const toDoc = (main) => daMerge.parse(page(main));
+
+  it('groups a changed unit into one group with both sides', async () => {
+    const main = await daMerge.regionalDiff(toDoc('<div><p>A</p><p>B</p></div>'), toDoc('<div><p>A local</p><p>B</p></div>'));
+    expect(markers(main.innerHTML)).to.deep.equal([
+      {
+        group: 'g1', side: 'source', kind: 'changed', reason: 'differs',
+      },
+      {
+        group: 'g1', side: 'local', kind: 'changed', reason: null,
+      },
+    ]);
+  });
+
+  it('gives separate changes their own groups, and a one-sided change kind added', async () => {
+    const main = await daMerge.regionalDiff(
+      toDoc('<div><p>A</p><p>B</p><p>C</p></div>'),
+      toDoc('<div><p>A2</p><p>B</p><p>C</p><p>D local</p></div>'),
+    );
+    const found = markers(main.innerHTML);
+    expect(found.map(({ group }) => group)).to.deep.equal(['g1', 'g1', 'g2']);
+    expect(found[2]).to.deep.equal({
+      group: 'g2', side: 'local', kind: 'added', reason: 'differs',
+    });
+  });
+
+  it('groups changed list items inside the list', async () => {
+    const main = await daMerge.regionalDiff(
+      toDoc('<div><ul><li>A</li><li>B</li><li>C</li></ul></div>'),
+      toDoc('<div><ul><li>A</li><li>B local</li><li>C</li></ul></div>'),
+    );
+    const found = markers(main.innerHTML);
+    expect(found).to.have.length(2);
+    expect(new Set(found.map(({ group }) => group)).size).to.equal(1);
+    expect(found.map(({ side }) => side)).to.deep.equal(['source', 'local']);
+  });
+
+  const conflict = {
+    base: '<div><p>A</p><p>B</p><p>C</p></div>',
+    source: '<div><p>A2</p><p>X</p><p>B2</p><p>C</p></div>',
+    dest: '<div><p>A local</p><p>B</p><p>C</p></div>',
+  };
+
+  it('marks a 3-way conflict as both-changed', async () => {
+    const base = await daMerge.getBlockHashes({ doc: toDoc(conflict.base), site, config });
+    const { html, review } = await daMerge.smartMerge({
+      base, source: toDoc(conflict.source), dest: toDoc(conflict.dest), site, config,
+    });
+    expect(review).to.equal(true);
+    const local = {
+      group: 'g1', side: 'local', kind: 'changed', reason: null,
+    };
+    expect(markers(html)).to.deep.equal([
+      {
+        group: 'g1', side: 'source', kind: 'changed', reason: 'both-changed',
+      },
+      local,
+      local,
+    ]);
+  });
+
+  it('writes the base content of a conflict when the baseline page is given', async () => {
+    const baselineDoc = toDoc(conflict.base);
+    const base = await daMerge.getBlockHashes({ doc: baselineDoc, site, config });
+    const { html } = await daMerge.smartMerge({
+      base, source: toDoc(conflict.source), dest: toDoc(conflict.dest), site, config, baselineDoc,
+    });
+    const result = doc(`<body><main>${html}</main></body>`);
+    const baseEl = result.querySelector('da-diff-base');
+    expect(baseEl.getAttribute('data-diff-group')).to.equal('g1');
+    expect(baseEl.getAttribute('data-mdast')).to.equal('ignore');
+    expect(baseEl.innerHTML).to.equal('<p>A</p><p>B</p>');
+    expect(baseEl.nextElementSibling.nodeName).to.equal('DA-DIFF-DELETED');
+  });
+
+  it('skips the base content when the baseline page does not match the stored baseline', async () => {
+    const base = await daMerge.getBlockHashes({ doc: toDoc(conflict.base), site, config });
+    const { html } = await daMerge.smartMerge({
+      base,
+      source: toDoc(conflict.source),
+      dest: toDoc(conflict.dest),
+      site,
+      config,
+      baselineDoc: toDoc('<div><p>Other</p><p>B</p><p>C</p></div>'),
+    });
+    expect(html).to.include('da-diff-deleted');
+    expect(html).to.not.include('da-diff-base');
+  });
+});
+
+describe('smartRollout with open markup', () => {
+  const toDoc = (main, metadata) => daMerge.parse(page(main, metadata));
+  const openGroup = '<da-diff-deleted data-mdast="ignore" data-diff-group="g1" data-diff-side="source" data-diff-kind="changed" data-diff-reason="both-changed"><p>A2</p></da-diff-deleted><p da-diff-added="" data-diff-group="g1" data-diff-side="local" data-diff-kind="changed">A local</p>';
+
+  it('keeps an open group as is and merges the rest', async () => {
+    const base = formatRolloutBase(PATH, await daMerge.getBlockHashes({ doc: toDoc('<div><p>A</p><p>B</p></div>'), site, config }));
+    const result = await daMerge.smartRollout({
+      source: toDoc('<div><p>A3</p><p>B2</p></div>'),
+      dest: toDoc(`<div>${openGroup}<p>B</p></div>`, { rolloutbase: base }),
+      path: PATH,
+      site,
+      config,
+    });
+    const out = doc(`<body><main>${result.html}</main></body>`);
+    expect(out.querySelectorAll('[data-diff-group="g1"]')).to.have.length(2);
+    expect(out.querySelector('da-diff-deleted').textContent).to.equal('A2');
+    expect(out.querySelector('main > div').lastElementChild.outerHTML).to.equal('<p>B2</p>');
+    expect(result.skipped).to.equal(1);
+  });
+
+  it('falls back to a full review with reason page-too-large above the size cap', async () => {
+    const base = formatRolloutBase(PATH, await daMerge.getBlockHashes({ doc: toDoc('<div><p>A</p><p>B</p></div>'), site, config }));
+    const result = await daMerge.smartRollout({
+      source: toDoc('<div><p>A2</p><p>B</p></div>'),
+      dest: toDoc('<div><p>A</p><p>B local</p></div>', { rolloutbase: base }),
+      path: PATH,
+      site,
+      config,
+      maxUnits: 2,
+    });
+    expect(result.reason).to.equal('page-too-large');
+    expect(markers(result.html).every(({ group }) => group)).to.equal(true);
+    expect(markers(result.html).find(({ reason }) => reason).reason).to.equal('page-too-large');
+  });
+});
+
+describe('applyCopy', () => {
+  it('rejects an unknown behavior or a missing source', async () => {
+    let error;
+    try {
+      await copy({ source: page('<div></div>'), behavior: 'replace' });
+    } catch (e) {
+      error = e;
+    }
+    expect(error).to.be.instanceOf(TypeError);
+    error = undefined;
+    try {
+      await copy({ behavior: 'merge' });
+    } catch (e) {
+      error = e;
+    }
+    expect(error).to.be.instanceOf(TypeError);
+  });
+
+  describe('create-only', () => {
+    it('skips an existing target', async () => {
+      const result = await copy({ source: page('<div><p>A</p></div>'), target: page('<div><p>B</p></div>'), behavior: 'create-only' });
+      expect(result.html).to.equal(null);
+      expect(result.report.outcome).to.equal('skipped');
+    });
+
+    it('writes a missing target', async () => {
+      const result = await copy({ source: page('<div><p>A</p></div>'), behavior: 'create-only' });
+      expect(mainOf(result.html)).to.equal('<div><p>A</p></div>');
+      expect(result.report.outcome).to.equal('written');
+    });
+  });
+
+  describe('overwrite', () => {
+    it('writes the source without its review keys, baseline, or markup', async () => {
+      const source = page('<div><p>A</p><da-diff-deleted data-mdast="ignore"><p>Up</p></da-diff-deleted></div>', {
+        title: 'Title', acceptedhashes: 'abcdef012345', rolloutbase: '/other|abcdef012345',
+      });
+      const result = await copy({ source, target: page('<div><p>Old</p></div>'), behavior: 'overwrite' });
+      expect(mainOf(result.html)).to.equal('<div><p>A</p></div>');
+      expect(Object.keys(metadataOf(result.html))).to.deep.equal(['title']);
+      expect(result.baseline).to.equal(null);
+    });
+
+    it('records a baseline when asked', async () => {
+      const source = page('<div><p>A</p></div>');
+      const result = await copy({ source, behavior: 'overwrite', recordBaseline: true });
+      const hashes = await daMerge.getBlockHashes({ doc: doc(source), site, config });
+      const expected = formatRolloutBase(PATH, hashes);
+      expect(result.baseline).to.equal(expected);
+      expect(metadataOf(result.html).rolloutbase.content.textContent).to.equal(expected);
+    });
+
+    it('writes the diff labels', async () => {
+      const result = await copy({ source: page('<div><p>A</p></div>'), behavior: 'overwrite', labels: { local: 'Mine', upstream: 'Theirs' } });
+      expect(metadataOf(result.html)['diff-label-local'].content.textContent).to.equal('Mine');
+      expect(metadataOf(result.html)['diff-label-upstream'].content.textContent).to.equal('Theirs');
+    });
+  });
+
+  describe('merge', () => {
+    it('marks every difference with reason differs', async () => {
+      const result = await copy({ source: page('<div><p>A</p></div>'), target: page('<div><p>A local</p></div>'), behavior: 'merge' });
+      expect(result.report.outcome).to.equal('needs-review');
+      expect(result.report.groups).to.deep.equal([{
+        id: 'g1', reason: 'differs', sides: ['source', 'local'], kinds: ['changed'],
+      }]);
+      expect(result.report.counts.needsReview).to.equal(1);
+    });
+
+    it('uses reason reviewing-open-markup when the target already had markup', async () => {
+      const target = page('<div><da-diff-deleted data-mdast="ignore"><p>Old</p></da-diff-deleted><p da-diff-added="">A local</p></div>');
+      const result = await copy({ source: page('<div><p>A</p></div>'), target, behavior: 'merge' });
+      expect(result.report.groups[0].reason).to.equal('reviewing-open-markup');
+      expect(result.html).to.not.include('Old');
+    });
+
+    it('writes nothing when the target matches the source', async () => {
+      const result = await copy({ source: page('<div><p>A</p></div>'), target: page('<div><p>A</p></div>'), behavior: 'merge' });
+      expect(result.html).to.equal(null);
+      expect(result.report.outcome).to.equal('unchanged');
+    });
+
+    it('only records the baseline when the target matches the source', async () => {
+      const result = await copy({
+        source: page('<div><p>A</p></div>'), target: page('<div><p>A</p></div>'), behavior: 'merge', recordBaseline: true,
+      });
+      expect(result.report.outcome).to.equal('unchanged');
+      expect(metadataOf(result.html).rolloutbase.content.textContent).to.equal(result.baseline);
+    });
+
+    it('drops a stale baseline and order without recordBaseline', async () => {
+      const target = page('<div><p>A local</p></div>', { rolloutbase: `${PATH}|abcdef012345`, rolloutorder: 'x', title: 'T' });
+      const result = await copy({ source: page('<div><p>A</p></div>'), target, behavior: 'merge' });
+      expect(Object.keys(metadataOf(result.html))).to.deep.equal(['title']);
+    });
+
+    it('overwrites an empty target', async () => {
+      const result = await copy({ source: page('<div><p>A</p></div>'), target: page('<div></div>'), behavior: 'merge' });
+      expect(mainOf(result.html)).to.equal('<div><p>A</p></div>');
+      expect(result.report.outcome).to.equal('written');
+    });
+  });
+
+  describe('smart-overwrite', () => {
+    it('reviews every difference on the first copy and records the baseline', async () => {
+      const result = await copy({ source: page('<div><p>A</p><p>B</p></div>'), target: page('<div><p>A local</p><p>B</p></div>'), behavior: 'smart-overwrite' });
+      expect(result.report.outcome).to.equal('needs-review');
+      expect(result.report.reason).to.equal('no-baseline');
+      expect(result.report.groups[0].reason).to.equal('no-baseline');
+      expect(result.baseline).to.match(/^\/org\/site\/page\.html\|/);
+    });
+
+    it('applies a source change and keeps a local change on the next copy', async () => {
+      const first = await copy({ source: page('<div><p>A</p><p>B</p></div>'), target: page('<div><p>A local</p><p>B</p></div>'), behavior: 'smart-overwrite' });
+      const result = await copy({ source: page('<div><p>A</p><p>B2</p></div>'), target: resolveAsMine(first.html), behavior: 'smart-overwrite' });
+      expect(mainOf(result.html)).to.equal('<div><p>A local</p><p>B2</p></div>');
+      expect(result.report.outcome).to.equal('written');
+      expect(result.report.counts).to.deep.equal({ applied: 1, keptLocal: 1, needsReview: 0 });
+    });
+
+    it('writes nothing when the source still matches the baseline', async () => {
+      const first = await copy({ source: page('<div><p>A</p></div>'), target: page('<div><p>A local</p></div>'), behavior: 'smart-overwrite' });
+      const result = await copy({ source: page('<div><p>A</p></div>'), target: resolveAsMine(first.html), behavior: 'smart-overwrite' });
+      expect(result.html).to.equal(null);
+      expect(result.report.outcome).to.equal('unchanged');
+    });
+
+    it('reports missing base content for a conflict without a baseline page', async () => {
+      const base = page('<div><p>A</p><p>B</p><p>C</p></div>');
+      const first = await copy({ source: base, target: base, behavior: 'smart-overwrite' });
+      const edited = first.html.replace('<p>A</p>', '<p>A local</p>');
+      const result = await copy({ source: page('<div><p>A2</p><p>X</p><p>B2</p><p>C</p></div>'), target: edited, behavior: 'smart-overwrite' });
+      expect(result.report.groups[0].reason).to.equal('both-changed');
+      expect(result.report.baselineContent).to.equal('missing');
+    });
+
+    it('falls back to merge with reason no-sync-point when content sits outside sections', async () => {
+      const result = await copy({ source: page('<div><p>A</p></div>'), target: page('<div><p>B</p></div>'), behavior: 'smart-overwrite' }, rawMerge);
+      expect(result.report.reason).to.equal('no-baseline');
+      const loose = await copy({ source: '<body><main><p>Loose</p></main></body>', target: page('<div><p>B</p></div>'), behavior: 'smart-overwrite' }, rawMerge);
+      expect(loose.report.reason).to.equal('no-sync-point');
+      expect(loose.report.groups[0].reason).to.equal('no-sync-point');
+    });
+
+    it('drops a base element whose group was resolved elsewhere', async () => {
+      const target = page('<div><da-diff-base data-mdast="ignore" data-diff-group="g9"><p>Was</p></da-diff-base><p>A</p></div>');
+      const result = await copy({ source: page('<div><p>A</p><p>B</p></div>'), target, behavior: 'merge' }, rawMerge);
+      expect(result.html).to.not.include('Was');
+    });
+  });
+
+  it('remaps a baseline stored before canonicalizing, so it causes no false conflicts', async () => {
+    const original = '<div><h2 id="intro">Intro</h2><p>A</p></div>';
+    const rawDoc = rawMerge.parse(page(original));
+    const legacyHashes = await rawMerge.getBlockHashes({ doc: rawDoc, site, config });
+    const legacyBase = formatRolloutBase(PATH, legacyHashes);
+    const result = await copy({
+      source: page('<div><h2 id="intro">Intro</h2><p>A2</p></div>'),
+      target: page(original, { rolloutbase: legacyBase }),
+      behavior: 'smart-overwrite',
+    });
+    expect(result.report.legacyHashes).to.be.greaterThan(0);
+    expect(result.report.outcome).to.equal('written');
+    expect(mainOf(result.html)).to.equal('<div><h2>Intro</h2><p>A2</p></div>');
+  });
+});
+
+describe('markInSync', () => {
+  const sync = (options) => daMerge.markInSync({
+    path: PATH, site, config, ...options,
+  });
+
+  it('reports pages it cannot mark', async () => {
+    expect(await sync({ path: '/org/site/data.json' })).to.deep.equal({ sync: 'sheet' });
+    expect(await sync({ path: '/org/site/.snapshots/s/page.html' })).to.deep.equal({ sync: 'snapshot' });
+    expect(await sync({ source: page('<div><p>A</p></div>') })).to.deep.equal({ sync: 'missing' });
+    expect(await sync({ source: page('<div><p>A</p></div>'), target: page('<div></div>') })).to.deep.equal({ sync: 'missing' });
+    expect(await sync({ source: page('<div><p>A</p></div>'), target: page('<div><p da-diff-added="">A</p></div>') })).to.deep.equal({ sync: 'unresolved' });
+    expect(await sync({ source: page('<div><p>A</p></div>'), target: page('<div><p>A</p></div>', { rolloutbase: `${PATH}|abcdef012345` }) })).to.deep.equal({ sync: 'in-sync' });
+  });
+
+  it('counts local differences in a dry run', async () => {
+    const result = await sync({ source: page('<div><p>A</p><p>B</p></div>'), target: page('<div><p>A local</p><p>B</p></div>'), dryRun: true });
+    expect(result).to.deep.equal({ sync: 'to-mark', differences: 1 });
+  });
+
+  it('writes the baseline of the current source into the target', async () => {
+    const source = page('<div><p>A</p></div>');
+    const result = await sync({ source, target: page('<div><p>A local</p></div>') });
+    expect(result.sync).to.equal('marked');
+    expect(metadataOf(result.html).rolloutbase.content.textContent).to.equal(result.baseline);
+    expect(mainOf(result.html)).to.equal('<div><p>A local</p></div>');
+  });
+});
+
+describe('diffSummary', () => {
+  it('summarizes groups, sides, reasons, and previews', () => {
+    const html = page('<div><da-diff-base data-mdast="ignore" data-diff-group="g1"><p>Was</p></da-diff-base><da-diff-deleted data-mdast="ignore" data-diff-group="g1" data-diff-side="source" data-diff-kind="changed" data-diff-reason="both-changed"><p>Theirs</p></da-diff-deleted><p da-diff-added="" data-diff-group="g1" data-diff-side="local" data-diff-kind="changed">Mine</p></div><div><p da-diff-added="" data-diff-group="g2" data-diff-side="local" data-diff-kind="added" data-diff-reason="differs">New</p></div>');
+    const summary = daMerge.diffSummary(html);
+    expect(summary.legacy).to.equal(false);
+    expect(summary.groups).to.deep.equal([
+      {
+        id: 'g1',
+        reason: 'both-changed',
+        sides: ['source', 'local'],
+        kinds: ['changed'],
+        section: 0,
+        preview: { source: 'Theirs', local: 'Mine', base: 'Was' },
+      },
+      {
+        id: 'g2', reason: 'differs', sides: ['local'], kinds: ['added'], section: 1, preview: { source: '', local: 'New' },
+      },
+    ]);
+    expect(summary.counts).to.deep.equal({
+      groups: 2, bySide: { source: 1, local: 2 }, byReason: { 'both-changed': 1, differs: 1 },
+    });
+  });
+
+  it('flags markup without groups as legacy', () => {
+    const summary = daMerge.diffSummary(page('<div><da-diff-deleted data-mdast="ignore"><p>Up</p></da-diff-deleted><p da-diff-added="">Mine</p></div>'));
+    expect(summary.legacy).to.equal(true);
+    expect(summary.groups).to.deep.equal([]);
+  });
+});

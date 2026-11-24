@@ -11,6 +11,9 @@
  */
 import { hashContent, HASH_LENGTH } from './hashes.js';
 import threeWayMerge from './smart-merge.js';
+import {
+  BASE_TAG, KIND, REASON, SIDE, attrString, createGroupIds, groupAttrs, markGroups, setGroupAttrs,
+} from './markup.js';
 
 const MIN_LIST_ITEMS_IN_COMMON = 2;
 const ADDED = 'added';
@@ -40,10 +43,12 @@ export const LOC_MARKERS = `${DELETED_TAG}, ${ADDED_TAG}, [${ADDED_TAG}], da-loc
 
 export const isSnapshotPath = (path) => path.includes('/.snapshots/');
 
+const OPEN_MARKUP = `${LOC_MARKERS}, ${BASE_TAG}`;
+
 // Remove all diff tags - document is updated to only keep local changes, upstream is deleted
 export const removeLocTags = (html) => {
   // TODO: Remove da-loc-deleted once we've migrated all regional edits to the new loc tags
-  const locElsToRemove = html.querySelectorAll(`${DELETED_TAG}, [loc-temp-dom], da-loc-deleted`);
+  const locElsToRemove = html.querySelectorAll(`${DELETED_TAG}, [loc-temp-dom], da-loc-deleted, ${BASE_TAG}`);
   locElsToRemove.forEach((el) => el.remove());
 
   // Keep added content: old regional edits (da-loc-added) and list items (<li><da-diff-added>)
@@ -351,6 +356,32 @@ export default function createRegionalDiff({ Node, document }) {
   const preText = (el) => (el.matches?.('pre') ? [el] : [...(el.querySelectorAll?.('pre') || [])])
     .map((pre) => pre.textContent).join('\u0000');
 
+  const isOpenMarkup = (block) => {
+    const first = Array.isArray(block) ? block[0] : block;
+    if (!first || first.isSection) return false;
+    if (first.matches?.(OPEN_MARKUP)) return true;
+    return ['UL', 'OL'].includes(first.nodeName) && !!first.querySelector(OPEN_MARKUP);
+  };
+
+  function fixOpenGroups(blocks) {
+    return blocks.reduce((acc, block) => {
+      if (!isOpenMarkup(block)) {
+        acc.push(block);
+        return acc;
+      }
+      const units = Array.isArray(block) ? block : [block];
+      const prev = acc[acc.length - 1];
+      if (prev?.fixed) {
+        prev.push(...units);
+        return acc;
+      }
+      const fixed = [...units];
+      fixed.fixed = true;
+      acc.push(fixed);
+      return acc;
+    }, []);
+  }
+
   // `smart` (smart-overwrite) needs a lossless block list: every section break, every element, and
   // whitespace inside <pre> counted as content.
   // keepAllBreaks: also keep the breaks of empty sections at the top of the page
@@ -367,7 +398,8 @@ export default function createRegionalDiff({ Node, document }) {
       const sectionArr = smart || (keepAllBreaks ? index : acc.length) ? [marker] : [];
       return [...acc, ...sectionArr, ...sectionBlocks];
     }, []);
-    return groupBlocks(blocks);
+    const grouped = groupBlocks(blocks);
+    return smart ? fixOpenGroups(grouped) : grouped;
   }
 
   function hashBlock(block, { smart = false } = {}) {
@@ -479,7 +511,7 @@ export default function createRegionalDiff({ Node, document }) {
     return `${htmlText}${inner}`;
   }
 
-  function buildHtmlFromDiff(diff, modified, acceptedHashes = [], rejectedHashes = []) {
+  function buildHtmlFromDiff(diff, modified, acceptedHashes, rejectedHashes, markup) {
     let htmlText = '<div>';
     for (let i = 0; i < diff.length; i += 1) {
       const item = diff[i];
@@ -554,7 +586,9 @@ export default function createRegionalDiff({ Node, document }) {
     }
     htmlText += '</div>';
 
-    modified.documentElement.querySelector('main').innerHTML = htmlText;
+    const main = modified.documentElement.querySelector('main');
+    main.innerHTML = htmlText;
+    markGroups(main, markup);
     return modified;
   }
 
@@ -610,19 +644,72 @@ export default function createRegionalDiff({ Node, document }) {
     return blocks.filter(({ block }) => !block.isSection).map(({ hash }) => hash);
   }
 
+  async function getReviewHashes({ doc, site, config }) {
+    const blocks = await getHashedBlocks(doc, { site, config, withReviewHash: true });
+    return blocks.map(({ reviewHash }) => reviewHash ?? null);
+  }
+
   const partHtml = (part) => (Array.isArray(part) ? getGroupInnerHtml(part) : part.outerHTML);
 
   // Like merge, each added block (or block group) carries the attribute on its first element.
-  const addedHtml = (part) => {
+  const addedHtml = (part, group) => {
     const [first, ...rest] = Array.isArray(part) ? part : [part];
     const added = first.cloneNode(true);
     added.setAttribute(ADDED_TAG, '');
+    setGroupAttrs(added, group);
     return partHtml([added, ...rest]);
   };
 
-  function markedHtml({ parts, mark }) {
-    if (mark !== 'upstream') return parts.map(addedHtml).join('');
-    return `${DELETED_OPEN}${parts.map(partHtml).join('')}</${DELETED_TAG}>`;
+  function markedHtml({ parts, mark, group }) {
+    if (mark !== 'upstream') return parts.map((part) => addedHtml(part, group)).join('');
+    const open = `<${DELETED_TAG} data-mdast="ignore"${attrString(groupAttrs(group))}>`;
+    return `${open}${parts.map(partHtml).join('')}</${DELETED_TAG}>`;
+  }
+
+  const baseHtml = (id, blocks) => `<${BASE_TAG} data-mdast="ignore" data-diff-group="${id}">${
+    blocks.map(partHtml).join('')}</${BASE_TAG}>`;
+
+  function getBaseContent(baseRange, { base, baselineBlocks }) {
+    if (!baselineBlocks) return null;
+    const [start, end] = baseRange;
+    const hashes = base.slice(start, end);
+    const found = baselineBlocks.slice(start, end);
+    const matches = hashes.length && found.length === hashes.length
+      && found.every((entry, idx) => entry.hash === hashes[idx]);
+    return matches ? found.filter(({ block }) => !block.isSection).map(({ block }) => block) : null;
+  }
+
+  function describeGroups(entries, { nextId, reason, baseline }) {
+    const groups = new Map();
+    entries.filter(({ mark }) => mark).forEach(({ group, mark, baseRange }) => {
+      if (!groups.has(group)) groups.set(group, { id: nextId(), marks: new Set(), baseRange });
+      groups.get(group).marks.add(mark);
+    });
+    groups.forEach((group) => {
+      group.reason = reason;
+      group.kind = group.marks.size > 1 ? KIND.changed : KIND.added;
+      group.reasonMark = group.marks.has('upstream') ? 'upstream' : 'local';
+      group.base = baseline && getBaseContent(group.baseRange, baseline);
+    });
+    return groups;
+  }
+
+  function markedEntryHtml(entry, groups) {
+    const { mark, parts } = entry;
+    const group = groups.get(entry.group);
+    const marked = markedHtml({
+      parts,
+      mark,
+      group: {
+        id: group.id,
+        side: mark === 'upstream' ? SIDE.source : SIDE.local,
+        kind: group.kind,
+        reason: mark === group.reasonMark ? group.reason : null,
+      },
+    });
+    if (!group.base || group.baseWritten) return marked;
+    group.baseWritten = true;
+    return `${baseHtml(group.id, group.base)}${marked}`;
   }
 
   const groupMarks = (blocks) => blocks.reduce((groups, entry) => {
@@ -634,10 +721,13 @@ export default function createRegionalDiff({ Node, document }) {
     return [...groups.slice(0, -1), { ...prev, parts: [...prev.parts, entry.block] }];
   }, []);
 
-  function buildHtmlFromBlocks(blocks) {
-    const inner = groupMarks(blocks).reduce((html, { block, mark, parts }, idx) => {
+  function buildHtmlFromBlocks(blocks, markup) {
+    const entries = groupMarks(blocks);
+    const groups = describeGroups(entries, markup);
+    const inner = entries.reduce((html, entry, idx) => {
+      const { block, mark } = entry;
       if (block.isSection) return `${html}${idx ? '</div>' : ''}${block.openTag || '<div>'}`;
-      if (mark) return `${html}${markedHtml({ parts, mark })}`;
+      if (mark) return `${html}${markedEntryHtml(entry, groups)}`;
       if (Array.isArray(block)) {
         const group = block.map((el) => (el.isSection ? `</div>${el.openTag || '<div>'}` : el.outerHTML));
         return `${html}${group.join('')}`;
@@ -664,12 +754,14 @@ export default function createRegionalDiff({ Node, document }) {
    *   sourceHashes is the next baseline. Other fields: see threeWayMerge.
    */
   async function smartMerge({
-    base, source, dest, rejected = [], site, config,
+    base, source, dest, rejected = [], site, config, baselineDoc = null,
+    reason = REASON.bothChanged, nextId = createGroupIds(dest),
   }) {
     const withReviewHash = rejected.length > 0;
     const sourceBlocks = await getHashedBlocks(source, { site, config, withReviewHash });
     const destBlocks = await getHashedBlocks(dest, { site, config });
     const rejectedBlocks = sourceBlocks.filter(isRejectedBlock(rejected));
+    const baselineBlocks = baselineDoc && await getHashedBlocks(baselineDoc, { site, config });
     const {
       blocks, skipped, review, removedUpstream, reordered, swaps, swapsAsBase, baseline,
     } = threeWayMerge({
@@ -677,9 +769,12 @@ export default function createRegionalDiff({ Node, document }) {
       source: sourceBlocks,
       dest: destBlocks,
       rejected: new Set(rejectedBlocks.map(({ hash }) => hash)),
+      fixed: new Set(destBlocks.filter(({ block }) => block.fixed).map(({ hash }) => hash)),
     });
     return {
-      html: buildHtmlFromBlocks(blocks),
+      html: buildHtmlFromBlocks(blocks, {
+        nextId, reason, baseline: baselineBlocks && { base, baselineBlocks },
+      }),
       skipped,
       review: review > 0,
       removedUpstream,
@@ -695,7 +790,9 @@ export default function createRegionalDiff({ Node, document }) {
     modified,
     acceptedHashes,
     rejectedHashes,
-    { normalizeImages, site, config } = {},
+    {
+      normalizeImages, site, config, reason = REASON.differs,
+    } = {},
   ) {
     const equivalentSites = getEquivalentSites(config);
 
@@ -704,7 +801,13 @@ export default function createRegionalDiff({ Node, document }) {
     // optional connector hook
     if (normalizeImages) normalizeImages(normalizedOriginal, normalizedModified);
     const diff = htmldiff(normalizedOriginal, normalizedModified);
-    const output = buildHtmlFromDiff(diff, normalizedModified, acceptedHashes, rejectedHashes);
+    const output = buildHtmlFromDiff(
+      diff,
+      normalizedModified,
+      acceptedHashes || [],
+      rejectedHashes || [],
+      { reason, nextId: createGroupIds(normalizedModified) },
+    );
     return output.body.querySelector('main');
   }
 
@@ -713,6 +816,7 @@ export default function createRegionalDiff({ Node, document }) {
     removeRejectedBlocks,
     getBlockHashes,
     getContentHashes,
+    getReviewHashes,
     smartMerge,
     regionalDiff,
   };

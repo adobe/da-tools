@@ -13,9 +13,12 @@ import { expect, dom, daMerge } from './test-utils.js';
 import DaMerge from '../src/index.js';
 
 describe('DaMerge', () => {
-  it('requires DOMParser, Node, and document', () => {
+  it('requires DOMParser, Node, document, and canonicalize', () => {
+    const canonicalize = (html) => html;
     expect(() => new DaMerge()).to.throw(TypeError);
-    expect(() => new DaMerge({ ...dom, Node: undefined })).to.throw(TypeError);
+    expect(() => new DaMerge({ ...dom, Node: undefined, canonicalize })).to.throw(TypeError);
+    expect(() => new DaMerge(dom)).to.throw(TypeError);
+    expect(() => new DaMerge({ ...dom, canonicalize })).to.not.throw();
   });
 
   it('parses a body-only DA page into body and main', () => {

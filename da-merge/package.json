@@ -29,6 +29,7 @@
     "directory": "da-merge"
   },
   "devDependencies": {
+    "@adobe/da-parser": "*",
     "@adobe/eslint-config-helix": "3.0.35",
     "@eslint/config-helpers": "0.7.0",
     "@esm-bundle/chai": "4.3.4-fix.0",
@@ -39,6 +40,7 @@
     "eslint": "9.39.5",
     "globals": "17.14.0",
     "linkedom": "0.18.15",
-    "mocha": "11.8.0"
+    "mocha": "11.8.0",
+    "yjs": "13.6.33"
   }
 }

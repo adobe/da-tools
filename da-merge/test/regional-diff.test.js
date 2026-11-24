@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 import {
-  expect, readTestFile, daMerge, createDoc, spy, sortAttributes,
+  expect, readTestFile, daMerge, createDoc, spy, sortAttributes, withoutGroups,
 } from './test-utils.js';
 import { removeLocTags, getDiffHash } from '../src/index.js';
 
@@ -19,7 +19,7 @@ const {
 } = daMerge;
 
 function cleanHtmlWhitespace(html) {
-  return sortAttributes(html.replace(/>\s+</g, '><').trim().replace(/\s+/g, ' ').trim());
+  return withoutGroups(sortAttributes(html.replace(/>\s+</g, '><').trim().replace(/\s+/g, ' ').trim()));
 }
 
 describe('Regional diff', () => {
@@ -309,7 +309,7 @@ describe('regionalDiff with hashes from an earlier review', () => {
   };
   const ownHeadings = (main) => [...main.querySelectorAll('h1')]
     .filter((h1) => !h1.closest('da-diff-deleted'))
-    .map((h1) => h1.outerHTML);
+    .map((h1) => withoutGroups(h1.outerHTML));
 
   it('keeps an own block that equals a rejected incoming block apart from its id', async () => {
     const incoming = toDoc('<h1 id="welcome">Welcome</h1><p>Check the options online.</p>');
@@ -359,13 +359,16 @@ describe('smartMerge', () => {
     return doc;
   };
   const hashes = (doc) => getBlockHashes({ doc, site: 'site', config: {} });
-  const merge = async ({ base, source, dest }) => smartMerge({
-    site: 'site',
-    config: {},
-    base: await hashes(toDoc(base)),
-    source: toDoc(source),
-    dest: toDoc(dest),
-  });
+  const merge = async ({ base, source, dest }) => {
+    const result = await smartMerge({
+      site: 'site',
+      config: {},
+      base: await hashes(toDoc(base)),
+      source: toDoc(source),
+      dest: toDoc(dest),
+    });
+    return { ...result, html: withoutGroups(result.html) };
+  };
 
   const mainDoc = (main) => {
     const doc = createDoc();

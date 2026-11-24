@@ -11,6 +11,8 @@
  */
 import createRegionalDiff from './regional-diff.js';
 import createSmartOverwrite from './smart-overwrite.js';
+import createApplyCopy from './apply-copy.js';
+import { diffSummary } from './markup.js';
 
 export {
   LOC_MARKERS, isSnapshotPath, removeLocTags,
@@ -18,8 +20,10 @@ export {
 export {
   DA_METADATA_SELECTOR, REVIEW_KEYS, readMetadata, getRolloutBase, formatRolloutBase,
   formatRolloutOrder, readRolloutOrder, isEmptyMain, withMetadataRow, withBaselineRow,
-  countLocalBlocks,
+  countLocalBlocks, MAX_UNITS,
 } from './smart-overwrite.js';
+export { BEHAVIORS, OUTCOME, toPageHtml } from './apply-copy.js';
+export { REASON } from './markup.js';
 export {
   HASH_LENGTH, ACCEPTED_KEY, REJECTED_KEY, ROLLOUT_BASE_KEY, ROLLOUT_ORDER_KEY,
   hashContent, getDiffHash,
@@ -28,18 +32,27 @@ export { default as threeWayMerge } from './smart-merge.js';
 export { default as getElementMetadata } from './metadata.js';
 
 export default class DaMerge {
-  constructor({ DOMParser, Node, document } = {}) {
-    if (!DOMParser || !Node || !document) {
-      throw new TypeError('DaMerge requires DOMParser, Node, and document');
+  constructor({
+    DOMParser, Node, document, canonicalize,
+  } = {}) {
+    if (!DOMParser || !Node || !document || typeof canonicalize !== 'function') {
+      throw new TypeError('DaMerge requires DOMParser, Node, document, and canonicalize');
     }
     this.parser = new DOMParser();
     const regional = createRegionalDiff({ Node, document });
     const smart = createSmartOverwrite({ Node, regional });
-    Object.assign(this, regional, smart);
+    const parse = (html) => this.parse(html);
+    Object.assign(this, regional, smart, createApplyCopy({
+      parse, canonicalize, regional, smart,
+    }));
   }
 
   parse(html) {
     const text = /<html[\s>]/i.test(html) ? html : `<html>${html}</html>`;
     return this.parser.parseFromString(text, 'text/html');
+  }
+
+  diffSummary(html) {
+    return diffSummary(this.parse(html));
   }
 }

@@ -9,6 +9,8 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
+import * as Y from 'yjs';
+import { aem2doc, doc2aem } from '@adobe/da-parser';
 import DaMerge from '../src/index.js';
 
 const isNode = typeof window === 'undefined';
@@ -23,7 +25,14 @@ const getDom = async () => {
 };
 
 const dom = await getDom();
-const daMerge = new DaMerge(dom);
+const canonicalize = (html) => {
+  const ydoc = new Y.Doc();
+  aem2doc(html, ydoc);
+  return doc2aem(ydoc);
+};
+
+const daMerge = new DaMerge({ ...dom, canonicalize });
+const rawMerge = new DaMerge({ ...dom, canonicalize: (html) => html });
 
 const createDoc = () => daMerge.parse('<!DOCTYPE html><html><head></head><body></body></html>');
 
@@ -35,6 +44,8 @@ async function readTestFile(path) {
   const { readFile } = await import('@web/test-runner-commands');
   return readFile({ path });
 }
+
+const withoutGroups = (html) => html.replace(/ data-diff-(?:group|side|kind|reason)="[^"]*"/g, '');
 
 const sortAttributes = (html) => html.replace(/<([a-z][a-z0-9-]*)((?:\s+[^\s=>]+(?:="[^"]*")?)+)\s*>/g, (_, tag, attrs) => `<${tag} ${attrs.trim().match(/[^\s=]+(?:="[^"]*")?/g).sort().join(' ')}>`);
 
@@ -48,5 +59,6 @@ const spy = (fn) => {
 };
 
 export {
-  expect, readTestFile, isNode, dom, daMerge, createDoc, spy, sortAttributes,
+  expect, readTestFile, isNode, dom, daMerge, rawMerge, canonicalize, createDoc, spy,
+  sortAttributes, withoutGroups,
 };

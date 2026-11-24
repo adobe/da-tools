@@ -349,6 +349,9 @@ function resolveConflict({ cluster, context }) {
   });
   const destBlocks = keepDest();
   const flag = { blocks: destBlocks, review: count };
+  if (destHunks.some((hunk) => hunk.blocks.some(({ hash }) => context.fixed.has(hash)))) {
+    return { blocks: destBlocks, skipped: count };
+  }
   const destTouched = new Set(destHunks.flatMap(indexesOf));
   const covered = (hunk) => hunk.start < hunk.end && hunk.blocks.length <= hunk.end - hunk.start
     && indexesOf(hunk).every((idx) => destTouched.has(idx));
@@ -493,7 +496,7 @@ const endsRemovedSection = ({
     && indexesOf(other).some(isBreak) && !other.blocks.some(hasBreak));
 
 function mergeBlocks({
-  base, source, dest, applyMoves,
+  base, source, dest, applyMoves, fixed = new Set(),
 }) {
   const {
     blocks: merged, matches, applied, reverted,
@@ -522,6 +525,7 @@ function mergeBlocks({
     upstream: merged,
     toSource: sourceDiff.matches,
     addsBlocks: inserted.some((block) => !isSection(block) && !inBase.has(block.hash)),
+    fixed,
   };
 
   const blocks = [];
@@ -536,7 +540,8 @@ function mergeBlocks({
     }));
     const resolved = resolveCluster({ cluster, context });
     const tagged = resolved.blocks
-      .map((entry) => (entry.mark ? { ...entry, group } : entry));
+      .map((entry) => (entry.mark
+        ? { ...entry, group, baseRange: [cluster.start, cluster.end] } : entry));
     blocks.push(...tagged);
     return { pos: cluster.end, ...add(acc, resolved) };
   }, {
@@ -601,7 +606,7 @@ const keepsApplied = ({ tried, plain, pageOnly }) => {
  *   `baseline` becomes the next base. Fields and conflict rows: docs/rollout-smart-overwrite.md
  */
 export default function threeWayMerge({
-  base, source: upstream, dest, rejected = new Set(),
+  base, source: upstream, dest, rejected = new Set(), fixed = new Set(),
 }) {
   const source = withoutRejected({ base, source: upstream, rejected });
   const baseKey = base.join();
@@ -619,7 +624,9 @@ export default function threeWayMerge({
   if (baseline.join() === baseKey) return clean(dest);
   if (toHashes(dest).join() === baseKey) return clean(source);
   if (baseline.join() === toHashes(dest).join()) return clean(dest);
-  const params = { base, source, dest };
+  const params = {
+    base, source, dest, fixed,
+  };
   const tried = mergeBlocks({ ...params, applyMoves: true });
   const plain = tried.applied.length ? mergeBlocks(params) : tried;
   const upstreamHashes = new Set(baseline);
