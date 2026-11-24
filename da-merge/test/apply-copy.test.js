@@ -474,6 +474,20 @@ describe('markInSync', () => {
     expect(await sync({ source: page('<div><p>A</p></div>'), target: page('<div><p>A</p></div>', { rolloutbase: `${PATH}|abcdef012345` }) })).to.deep.equal({ sync: 'in-sync' });
   });
 
+  it('keeps the shape of a full document page', async () => {
+    const source = page('<div><p>A</p></div>');
+    const body = '<body><main><div><p>A local</p></div></main></body>';
+    const full = await sync({ source, target: `<!DOCTYPE html>\n<html lang="fr"><head><title>T</title></head>${body}</html>` });
+    expect(full.html.startsWith('<!DOCTYPE html>\n<html lang="fr"><head><title>T</title></head><body><main>')).to.equal(true);
+    const noHtml = await sync({ source, target: `<!doctype html><head><title>T</title></head>${body}` });
+    expect(noHtml.html.startsWith('<!DOCTYPE html>')).to.equal(true);
+    expect(noHtml.html).to.include('<title>T</title>');
+    const noHead = await sync({ source, target: `<title>T</title>${body}` });
+    expect(noHead.html).to.include('<title>T</title>');
+    const bodyOnly = await sync({ source, target: body });
+    expect(bodyOnly.html.startsWith('<body>')).to.equal(true);
+  });
+
   it('counts local differences in a dry run', async () => {
     const result = await sync({ source: page('<div><p>A</p><p>B</p></div>'), target: page('<div><p>A local</p><p>B</p></div>'), dryRun: true });
     expect(result).to.deep.equal({ sync: 'to-mark', differences: 1 });

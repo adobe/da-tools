@@ -70,7 +70,7 @@ export function withMetadataRow(doc, { key, value, dropKeys = [] }) {
     metadata.append(row);
   }
   if (!doc.sourceShape?.html && !doc.head?.childNodes.length) return page.body.outerHTML;
-  const doctype = doc.sourceShape.doctype ? '<!DOCTYPE html>\n' : '';
+  const doctype = doc.sourceShape?.doctype ? '<!DOCTYPE html>\n' : '';
   return `${doctype}${page.documentElement.outerHTML}`;
 }
 

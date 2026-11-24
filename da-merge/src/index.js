@@ -50,8 +50,14 @@ export default class DaMerge {
   }
 
   parse(html) {
-    const text = /<html[\s>]/i.test(html) ? html : `<html>${html}</html>`;
-    return this.parser.parseFromString(text, 'text/html');
+    const [, head, body] = (!/<(html|head)[\s>]/i.test(html)
+      && html.match(/^([\s\S]*?)(<body[\s>][\s\S]*)$/i)) || [];
+    const inner = head?.trim() ? `<head>${head}</head>${body}` : html;
+    const text = /<html[\s>]/i.test(html) ? html : `<html>${inner}</html>`;
+    const doc = this.parser.parseFromString(text, 'text/html');
+    const doctype = /^\s*<!doctype/i.test(html);
+    doc.sourceShape = { html: doctype || /<(html|head)[\s>]/i.test(html), doctype };
+    return doc;
   }
 
   diffSummary(html) {
