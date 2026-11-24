@@ -387,6 +387,23 @@ describe('applyCopy', () => {
       expect(loose.report.groups[0].reason).to.equal('no-sync-point');
     });
 
+    it('keeps the baseline rows in the no-sync-point fallback when a snapshot is involved', async () => {
+      const snapshot = '/org/site/.snapshots/s1/page.html';
+      const sourceBase = `${PATH}|abcdef012345`;
+      const targetBase = `${PATH}|0123456789ab`;
+      const source = page('<p>Loose</p>', { rolloutbase: sourceBase, rolloutorder: 'x' });
+      const target = page('<div><p>B</p></div>', { rolloutbase: targetBase, rolloutorder: 'y' });
+      const forked = await copy({ source, path: snapshot, behavior: 'smart-overwrite' }, rawMerge);
+      const merged = await copy({
+        source, target, sourcePath: snapshot, behavior: 'smart-overwrite',
+      }, rawMerge);
+      expect(forked.report.reason).to.equal('no-sync-point');
+      expect(merged.report.reason).to.equal('no-sync-point');
+      expect(metadataOf(forked.html).rolloutbase.content.textContent).to.equal(sourceBase);
+      expect(metadataOf(merged.html).rolloutbase.content.textContent).to.equal(targetBase);
+      expect(metadataOf(merged.html).rolloutorder.content.textContent).to.equal('y');
+    });
+
     it('drops a base element whose group was resolved elsewhere', async () => {
       const target = page('<div><da-diff-base data-mdast="ignore" data-diff-group="g9"><p>Was</p></da-diff-base><p>A</p></div>');
       const result = await copy({ source: page('<div><p>A</p><p>B</p></div>'), target, behavior: 'merge', recordBaseline: false }, rawMerge);

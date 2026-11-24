@@ -237,17 +237,25 @@ export default function createApplyCopy({
   }
 
   async function smartOverwrite({
-    source, target, path, labels, hashing, normalizeImages, baselineHtml, maxUnits, extra,
+    source, target, path, snapshot, labels, hashing, normalizeImages, baselineHtml, maxUnits, extra,
   }) {
     const unsectioned = !getSectionedMain(source) || (target && !getSectionedMain(target));
     if (unsectioned) {
       if (!target) {
         return overwrite({
-          source, path, labels, hashing, reason: REASON.noSyncPoint,
+          source, path, snapshot, labels, hashing, reason: REASON.noSyncPoint,
         });
       }
       return merge({
-        source, target, path, labels, hashing, normalizeImages, reason: REASON.noSyncPoint, extra,
+        source,
+        target,
+        path,
+        snapshot,
+        labels,
+        hashing,
+        normalizeImages,
+        reason: REASON.noSyncPoint,
+        extra,
       });
     }
     const cleanSource = source.cloneNode(true);
