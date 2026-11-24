@@ -40,6 +40,27 @@ const getTopLevelParseAttrs = (dom) => ({
   daDiffAdded: dom.getAttribute('da-diff-added') ?? null,
 });
 
+export const DIFF_ATTRS = {
+  diffGroup: 'data-diff-group',
+  diffSide: 'data-diff-side',
+  diffKind: 'data-diff-kind',
+  diffReason: 'data-diff-reason',
+};
+
+const diffAttrs = Object.fromEntries(
+  Object.keys(DIFF_ATTRS).map((key) => [key, { default: null, validate: 'string|null' }]),
+);
+
+const getDiffParseAttrs = (dom) => Object.fromEntries(
+  Object.entries(DIFF_ATTRS).map(([key, attr]) => [key, dom.getAttribute(attr) ?? null]),
+);
+
+const getDiffToDomAttrs = (node) => Object.fromEntries(
+  Object.entries(DIFF_ATTRS)
+    .filter(([key]) => node.attrs[key] != null)
+    .map(([key, attr]) => [attr, node.attrs[key]]),
+);
+
 const getHeadingAttrs = (level) => (dom) => ({
   level,
   ...getTopLevelParseAttrs(dom),
@@ -199,6 +220,7 @@ const baseNodes = {
     toDOM: () => ['da-loc-added', { contenteditable: false }, 0],
   },
   diff_added: {
+    attrs: { ...diffAttrs },
     group: 'block',
     content: 'block+',
     atom: true,
@@ -206,6 +228,7 @@ const baseNodes = {
     parseDOM: [
       {
         tag: 'da-diff-added',
+        getAttrs: getDiffParseAttrs,
         contentElement: (dom) => {
           [...dom.children].forEach((child) => {
             if (child.properties) {
@@ -219,7 +242,7 @@ const baseNodes = {
       // Note: da-loc-added is handled by loc_added node type (defined above),
       // so we don't need a duplicate entry here
     ],
-    toDOM: () => ['da-diff-added', { contenteditable: false }, 0],
+    toDOM: (node) => ['da-diff-added', { contenteditable: false, ...getDiffToDomAttrs(node) }, 0],
   },
   loc_deleted: {
     group: 'block',
@@ -230,6 +253,7 @@ const baseNodes = {
     toDOM: () => ['da-loc-deleted', { contenteditable: false }, 0],
   },
   diff_deleted: {
+    attrs: { ...diffAttrs },
     group: 'block',
     content: 'block+',
     atom: true,
@@ -237,12 +261,32 @@ const baseNodes = {
     parseDOM: [
       {
         tag: 'da-diff-deleted',
+        getAttrs: getDiffParseAttrs,
         contentElement: (dom) => dom,
       },
       // Note: da-loc-deleted is handled by loc_deleted node type (defined above),
       // so we don't need a duplicate entry here
     ],
-    toDOM: () => ['da-diff-deleted', { 'data-mdast': 'ignore', contenteditable: false }, 0],
+    toDOM: (node) => ['da-diff-deleted', { 'data-mdast': 'ignore', contenteditable: false, ...getDiffToDomAttrs(node) }, 0],
+  },
+  diff_base: {
+    attrs: { diffGroup: { default: null, validate: 'string|null' } },
+    group: 'block',
+    content: 'block+',
+    atom: true,
+    isolating: true,
+    parseDOM: [
+      {
+        tag: 'da-diff-base',
+        getAttrs: (dom) => ({ diffGroup: dom.getAttribute('data-diff-group') ?? null }),
+        contentElement: (dom) => dom,
+      },
+    ],
+    toDOM: (node) => ['da-diff-base', {
+      'data-mdast': 'ignore',
+      contenteditable: false,
+      ...(node.attrs.diffGroup != null ? { 'data-diff-group': node.attrs.diffGroup } : {}),
+    }, 0],
   },
 };
 
@@ -367,6 +411,7 @@ export function getSchema() {
   // Update diff nodes to allow list_item after list nodes are added
   nodes = nodes.update('diff_deleted', { ...nodes.get('diff_deleted'), content: '(block | list_item)+' });
   nodes = nodes.update('diff_added', { ...nodes.get('diff_added'), content: '(block | list_item)+' });
+  nodes = nodes.update('diff_base', { ...nodes.get('diff_base'), content: '(block | list_item)+' });
   nodes = nodes.update('loc_deleted', { ...nodes.get('loc_deleted'), content: '(block | list_item)+' });
   nodes = nodes.update('loc_added', { ...nodes.get('loc_added'), content: '(block | list_item)+' });
 
@@ -381,7 +426,7 @@ const KNOWN_HTML_TAGS = [
   'blockquote', 'picture', 'source', 'img', 'a',
   'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
   'pre', 'code', 'img', 'br', 'ul', 'ol', 'li', 'table', 'thead', 'tbody', 'tr', 'td', 'th',
-  'sup', 'sub', 'da-loc-added', 'da-loc-deleted', 'da-diff-added', 'da-diff-deleted',
+  'sup', 'sub', 'da-loc-added', 'da-loc-deleted', 'da-diff-added', 'da-diff-deleted', 'da-diff-base',
 ];
 
 export function isKnownHTMLTag(tag) {
