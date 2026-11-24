@@ -671,6 +671,44 @@ describe('applyCopy', () => {
   });
 });
 
+describe('metadata key case', () => {
+  const rowsOf = (html) => [...doc(html).querySelectorAll(`${DA_METADATA_SELECTOR} > div`)]
+    .map(({ children: [key, value] }) => [key.textContent, value.textContent]);
+  const source = page('<div><p>A</p></div>');
+
+  it('reads rows case-insensitively and merges rows that differ only by case into the first', () => {
+    const el = doc(page('<div></div>', { rejectedHashes: 'aaa', rejectedhashes: 'bbb' })).querySelector(DA_METADATA_SELECTOR);
+    expect(getElementMetadata(el).rejectedhashes.text).to.equal('aaa,bbb');
+  });
+
+  it('writes each existing row back with its original key', async () => {
+    const target = page('<div><p>A local</p></div>', { Title: 'T', rejectedHashes: 'aaa', acceptedHashes: 'ccc' });
+    const result = await copy({ source, target, behavior: 'merge', recordBaseline: false });
+    expect(rowsOf(result.html)).to.deep.equal([['Title', 'T'], ['rejectedHashes', 'aaa'], ['acceptedHashes', 'ccc']]);
+  });
+
+  it('merges rows that differ only by case into the first row when it rewrites metadata', async () => {
+    const target = page('<div><p>A local</p></div>', { rejectedHashes: 'aaa', rejectedhashes: 'bbb' });
+    const result = await copy({ source, target, behavior: 'smart-overwrite' });
+    expect(rowsOf(result.html).filter(([key]) => key.toLowerCase() === 'rejectedhashes'))
+      .to.deep.equal([['rejectedHashes', 'aaa,bbb']]);
+  });
+
+  it('keeps the spelling of an existing baseline row when it records a new baseline', async () => {
+    const target = page('<div><p>A</p></div>', { RolloutBase: `${PATH}|abcdef012345` });
+    const result = await copy({
+      source, target, behavior: 'merge', recordBaseline: true,
+    });
+    expect(rowsOf(result.html).map(([key]) => key)).to.deep.equal(['RolloutBase']);
+  });
+
+  it('keeps the review rows\' spelling when it copies into an emptied page', async () => {
+    const result = await copy({ source, target: page('<div></div>', { rejectedHashes: 'aaa' }), behavior: 'smart-overwrite' });
+    expect(rowsOf(result.html).filter(([key]) => key.toLowerCase() === 'rejectedhashes'))
+      .to.deep.equal([['rejectedHashes', 'aaa']]);
+  });
+});
+
 describe('markInSync', () => {
   const sync = (options) => daMerge.markInSync({
     path: PATH, site, config, ...options,

@@ -73,6 +73,8 @@ if (html) await save(path, html);
 
 Before it compares, the engine checks that canonicalizing keeps each page's content. It compares the text, the `da-metadata` values by key, and the number of `img`, `picture`, `video`, and `a[href]` elements, outside `header` and `footer`. If they differ, `applyCopy` and `markInSync` throw an error with `code` `canonicalize-loss` (`CANONICALIZE_LOSS`), and nothing is written. The error's `side` names the page: `source`, `target`, or `baseline` (the `baselineHtml` page). Opening and saving the page in the editor makes it canonical.
 
+Metadata keys are read without regard to case. When the engine rewrites the `da-metadata` rows, each existing row keeps its key as written (for example `rejectedHashes`). Rows the engine adds use its own spelling (`rolloutbase`, `rolloutorder`, `diff-label-local`, `diff-label-upstream`). Rows whose keys differ only by case are merged into the first one, with their values joined by commas.
+
 `merge` treats a target with an empty `main` as missing and writes the source. A `merge` or `overwrite` without `recordBaseline` removes the target's baseline. When `path` or `sourcePath` contains `/.snapshots/`, the baseline rows (`rolloutbase`, `rolloutorder`) stay instead, and no new baseline is recorded. `overwrite` keeps the source's rows. `merge` keeps the target's rows. `smart-overwrite` does not merge against the baseline. It reviews every difference with reason `no-baseline`, and keeps the target's rows, or the source's rows when there is no target.
 
 `smart-overwrite` falls back to a merge with a reason: `no-baseline` (no baseline yet) or `page-too-large` (more than `MAX_UNITS` units on one side).

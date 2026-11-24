@@ -20,9 +20,24 @@ export const MAX_UNITS = 2000;
 
 const toBasePath = (path) => path.toLowerCase();
 
+const SPELLING = Symbol('spelling');
+
 // Keeps metadata values exactly as authored (getElementMetadata's `text` is lowercased).
-export const readMetadata = (el) => Object.fromEntries(Object.entries(getElementMetadata(el))
-  .map(([key, { content }]) => [key, content.innerHTML]));
+export const readMetadata = (el) => {
+  const rows = Object.entries(getElementMetadata(el));
+  const metadata = Object.fromEntries(rows.map(([key, { content }]) => [key, content.innerHTML]));
+  Object.defineProperty(metadata, SPELLING, {
+    value: new Map(rows.map(([key, { key: spelled }]) => [key, spelled])),
+  });
+  return metadata;
+};
+
+export const metadataKey = (metadata, key) => metadata[SPELLING]?.get(key) ?? key;
+
+export function copyMetadataRow(to, from, key) {
+  to[key] = from[key];
+  to[SPELLING]?.set(key, metadataKey(from, key));
+}
 
 export function getRolloutBase(metadataEl, path) {
   const value = getElementMetadata(metadataEl)[ROLLOUT_BASE_KEY]?.content.textContent.trim();
@@ -58,14 +73,25 @@ export function withMetadataRow(doc, { key, value, dropKeys = [] }) {
     metadata.className = 'da-metadata';
     page.body.insertBefore(metadata, page.querySelector('body > footer'));
   }
+  const keyOf = (el) => el.children[0]?.textContent.trim();
+  const rows = getElementMetadata(metadata);
+  const firsts = new Map();
+  [...metadata?.children || []].forEach((el) => {
+    const name = keyOf(el)?.toLowerCase();
+    if (!name || !rows[name]) return;
+    if (firsts.has(name)) el.remove();
+    else firsts.set(name, el);
+  });
+  firsts.forEach((el, name) => el.children[1].replaceWith(rows[name].content.cloneNode(true)));
+  const spelled = rows[key]?.key ?? key;
   const removed = [key, ...dropKeys];
   [...metadata?.children || []]
-    .filter((el) => removed.includes(el.children[0]?.textContent.trim().toLowerCase()))
+    .filter((el) => removed.includes(keyOf(el)?.toLowerCase()))
     .forEach((el) => el.remove());
   if (value) {
     const row = page.createElement('div');
     row.append(page.createElement('div'), page.createElement('div'));
-    row.firstElementChild.textContent = key;
+    row.firstElementChild.textContent = spelled;
     row.lastElementChild.textContent = value;
     metadata.append(row);
   }
@@ -116,7 +142,7 @@ export default function createSmartOverwrite({ Node, regional }) {
     const daMetadata = readMetadata(source.querySelector(DA_METADATA_SELECTOR));
     const destMetadata = readMetadata(destMetadataEl);
     REVIEW_KEYS.forEach((key) => {
-      if (destMetadata[key]) daMetadata[key] = destMetadata[key];
+      if (destMetadata[key]) copyMetadataRow(daMetadata, destMetadata, key);
       else delete daMetadata[key];
     });
     const sourceHashes = await getBlockHashes({ doc: copy, site, config });

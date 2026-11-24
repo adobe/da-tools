@@ -12,7 +12,7 @@
 import { LOC_MARKERS, isSnapshotPath, removeLocTags } from './regional-diff.js';
 import {
   DA_METADATA_SELECTOR, REVIEW_KEYS, MAX_UNITS, readMetadata, getRolloutBase, formatRolloutBase,
-  readRolloutOrder, isEmptyMain, withMetadataRow, withBaselineRow, countLocalBlocks,
+  readRolloutOrder, isEmptyMain, withMetadataRow, withBaselineRow, countLocalBlocks, metadataKey,
 } from './smart-overwrite.js';
 import { ROLLOUT_BASE_KEY, ROLLOUT_ORDER_KEY } from './hashes.js';
 import getElementMetadata from './metadata.js';
@@ -32,7 +32,7 @@ const STORED_HASH_KEYS = ['acceptedhashes', 'rejectedhashes'];
 
 export function toPageHtml(main, metadata = {}) {
   const rows = Object.entries(metadata)
-    .map(([key, value]) => `<div><div>${key}</div><div>${value ?? ''}</div></div>`).join('');
+    .map(([key, value]) => `<div><div>${metadataKey(metadata, key)}</div><div>${value ?? ''}</div></div>`).join('');
   const metadataHtml = rows ? `\n  <div class="da-metadata">${rows}</div>\n` : '';
   return `
       <body>
@@ -83,8 +83,11 @@ function contentOf(doc) {
 
 function setMetadataText(doc, key, value) {
   const rows = [...doc.querySelectorAll(`${DA_METADATA_SELECTOR} > div`)];
-  const row = rows.find((el) => el.children[0]?.textContent.trim().toLowerCase() === key);
-  if (row?.children[1]) row.children[1].textContent = value;
+  const [row, ...others] = rows
+    .filter((el) => el.children[0]?.textContent.trim().toLowerCase() === key);
+  if (!row?.children[1]) return;
+  row.children[1].textContent = value;
+  others.forEach((el) => el.remove());
 }
 
 export default function createApplyCopy({
