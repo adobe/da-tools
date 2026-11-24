@@ -71,6 +71,23 @@ describe('Diff markup v2', () => {
     expect(roundTrip(html)).to.equal(html);
   });
 
+  it('round trips v2 attributes on an added linked picture', () => {
+    const html = page(`<a href="https://new.example.com" title="New" da-diff-added="" ${LOCAL}><picture><source srcset="https://new.example.com/image.jpg"><source srcset="https://new.example.com/image.jpg" media="(min-width: 600px)"><img src="https://new.example.com/image.jpg" alt="New"></picture></a>`);
+    expect(roundTrip(html)).to.equal(html);
+  });
+
+  it('round trips the diff marker and v2 attributes on an added picture', () => {
+    const html = page(`<picture da-diff-added="" ${LOCAL}><source srcset="https://new.example.com/image.jpg"><source srcset="https://new.example.com/image.jpg" media="(min-width: 600px)"><img src="https://new.example.com/image.jpg" alt="New" loading="lazy"></picture>`);
+    expect(roundTrip(html)).to.equal(html);
+  });
+
+  it('keeps v2 attributes on an added edit-as image link', () => {
+    const html = page(`<a href="https://new.example.com/image.jpg" title="New" data-edit-as="image" da-diff-added="" ${LOCAL}>https://new.example.com/image.jpg</a>`);
+    const first = roundTrip(html);
+    expect(first).to.include(`<p da-diff-added="" ${LOCAL}>`);
+    expect(roundTrip(first)).to.equal(first);
+  });
+
   it('keeps v1 markup unchanged', () => {
     const html = page('<da-diff-deleted data-mdast="ignore"><p>Source</p></da-diff-deleted><p da-diff-added="">Mine</p>');
     expect(roundTrip(html)).to.equal(html);

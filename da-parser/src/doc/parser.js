@@ -614,7 +614,12 @@ export function aem2doc(html, ydoc) {
   prosemirrorToYXmlFragment(json, ydoc.getXmlFragment('prosemirror'));
 }
 
-function tohtml(node) {
+const getDiffMarkerAttrs = (attributes) => copyDiffAttrs(
+  attributes,
+  attributes?.['da-diff-added'] === '' ? { 'da-diff-added': '' } : {},
+);
+
+function tohtml(node, unitDiffAttrs = {}) {
   const { attributes } = node;
   let attrString = getAttrString(attributes);
   if (!node.children || node.children.length === 0) {
@@ -637,14 +642,14 @@ function tohtml(node) {
         delete attributes.href;
         delete attributes.title;
 
-        const daDiffAddedStr = attributes['da-diff-added'] === '' ? ' da-diff-added=""' : '';
+        const diffStr = getAttrString({ ...getDiffMarkerAttrs(attributes), ...unitDiffAttrs });
         delete attributes['da-diff-added'];
 
         attrString = getAttrString(attributes);
         const titleStr = title ? ` title="${encodeAttrValue(title)}"` : '';
-        return `<a href="${href}"${titleStr}${daDiffAddedStr}><picture><source srcset="${src}"><source srcset="${src}" media="(min-width: 600px)"><img${attrString}></picture></a>`;
+        return `<a href="${href}"${titleStr}${diffStr}><picture><source srcset="${src}"><source srcset="${src}" media="(min-width: 600px)"><img${attrString}></picture></a>`;
       }
-      return `<picture><source srcset="${src}"><source srcset="${src}" media="(min-width: 600px)"><img${attrString}></picture>`;
+      return `<picture${getAttrString(unitDiffAttrs)}><source srcset="${src}"><source srcset="${src}" media="(min-width: 600px)"><img${attrString}></picture>`;
     }
 
     const result = node.type !== 'br' ? `<${node.type}${attrString}></${node.type}>` : `<${node.type}>`;
@@ -668,7 +673,8 @@ function tohtml(node) {
     // as <a>, so they keep their <p> like a normally authored link.
     const isPicture = (child) => child.type === 'img' && child.attributes?.['data-edit-as'] !== 'image';
     if (nonEmptyChildren.every(isPicture)) {
-      return children.map((child) => tohtml(child)).join('');
+      const diffAttrs = getDiffMarkerAttrs(attributes);
+      return children.map((child) => tohtml(child, diffAttrs)).join('');
     }
   }
   return `<${node.type}${attrString}>${children.map((child) => tohtml(child)).join('')}</${node.type}>`;
@@ -843,6 +849,7 @@ export function doc2aem(ydoc) {
       // unwrap the content inside of da-diff-added
       const locChildren = child.children;
       locChildren.forEach((locChild) => {
+        if (locChild.type !== 'table') locChild.attributes['da-diff-added'] = '';
         copyDiffAttrs(child.attributes, locChild.attributes);
         if (locChild.type === 'table') {
           tableToBlock(locChild, fragment);
