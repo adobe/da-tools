@@ -242,6 +242,20 @@ describe('applyCopy', () => {
       expect(result.report.outcome).to.equal('unchanged');
     });
 
+    it('allows canonicalizing to merge repeated metadata rows, but not to change a value', async () => {
+      const stale = '<div><div>rolloutbase</div><div>stale</div></div>';
+      const target = page('<div><p>A local</p></div>').replace('<footer>', `<div class="da-metadata">${stale}<div><div>label</div><div>L</div></div>${stale}</div><footer>`);
+      const source = page('<div><p>A</p></div>');
+      const marked = await daMerge.markInSync({
+        source, target, path: PATH, site, config,
+      });
+      expect(marked.sync).to.equal('marked');
+      const error = await errorOf(engine((html) => html.replace('<div>L</div>', '<div></div>')).markInSync({
+        source, target, path: PATH, site, config,
+      }));
+      expect(error?.code).to.equal('canonicalize-loss');
+    });
+
     it('refuses to mark a page in sync when canonicalizing loses content', async () => {
       const target = page('<div><p>A local</p></div>');
       const error = await errorOf(engine((html) => html.replace('A local', '')).markInSync({

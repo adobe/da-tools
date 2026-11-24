@@ -71,7 +71,7 @@ if (html) await save(path, html);
 
 `outcome` is `needs-review` whenever the page has open groups after the copy, even when `html` is `null`. Use `html === null` to tell that nothing was written. `counts.needsReview` counts the open groups on the page to save, or on the target when `html` is `null`. `contentChanged` is `true` when `html` changes the page content, not only its metadata.
 
-Before it compares, the engine checks that canonicalizing keeps each page's content. It compares the text and the number of `img`, `picture`, `video`, and `a[href]` elements, outside `header` and `footer`. If they differ, `applyCopy` and `markInSync` throw an error with `code` `canonicalize-loss` (`CANONICALIZE_LOSS`), and nothing is written. Opening and saving the page in the editor makes it canonical.
+Before it compares, the engine checks that canonicalizing keeps each page's content. It compares the text, the `da-metadata` values by key, and the number of `img`, `picture`, `video`, and `a[href]` elements, outside `header` and `footer`. If they differ, `applyCopy` and `markInSync` throw an error with `code` `canonicalize-loss` (`CANONICALIZE_LOSS`), and nothing is written. Opening and saving the page in the editor makes it canonical.
 
 `merge` treats a target with an empty `main` as missing and writes the source. A `merge` or `overwrite` without `recordBaseline` removes the target's baseline. When `path` or `sourcePath` contains `/.snapshots/`, the baseline rows (`rolloutbase`, `rolloutorder`) stay instead, and no new baseline is recorded. `overwrite` keeps the source's rows. `merge` keeps the target's rows.
 

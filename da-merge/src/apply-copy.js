@@ -63,12 +63,22 @@ function dropOrphanBases(doc) {
 export const CANONICALIZE_LOSS = 'canonicalize-loss';
 const COUNTED = ['img', 'picture', 'video', 'a[href]'];
 
+const textOf = (el) => (el?.textContent ?? '').replace(/\s+/g, '');
+
 function contentOf(doc) {
   const body = doc.body.cloneNode(true);
   [...body.children].filter((el) => ['HEADER', 'FOOTER'].includes(el.nodeName))
     .forEach((el) => el.remove());
-  const text = body.textContent.replace(/\s+/g, '');
-  return [text, ...COUNTED.map((selector) => body.querySelectorAll(selector).length)].join('|');
+  const counts = COUNTED.map((selector) => body.querySelectorAll(selector).length);
+  const metadata = new Map();
+  [...body.children].filter((el) => el.classList.contains('da-metadata')).forEach((el) => {
+    [...el.children].forEach(({ children: [key, value] }) => {
+      metadata.set(textOf(key), textOf(value));
+    });
+    el.remove();
+  });
+  const rows = [...metadata].sort(([one], [other]) => one.localeCompare(other));
+  return JSON.stringify([textOf(body), counts, rows]);
 }
 
 function setMetadataText(doc, key, value) {
