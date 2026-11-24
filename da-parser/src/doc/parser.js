@@ -385,6 +385,11 @@ function processDiffTags(main) {
   });
 }
 
+const textOf = (node) => {
+  if (node.type === 'text') return node.value;
+  return (node.children || []).map(textOf).join('');
+};
+
 const getMetadata = (metadataTree) => {
   const attrs = {};
   if (metadataTree?.children) {
@@ -392,8 +397,8 @@ const getMetadata = (metadataTree) => {
       if (rowDiv.tagName === 'div') {
         const divChildren = rowDiv.children?.filter((child) => child.tagName === 'div') || [];
         if (divChildren.length === 2) {
-          const key = divChildren[0].children?.[0]?.value;
-          const value = divChildren[1].children?.[0]?.value || null;
+          const key = textOf(divChildren[0]).trim();
+          const value = textOf(divChildren[1]).trim() || null;
           if (key) {
             attrs[key] = value;
           }
@@ -412,6 +417,11 @@ function encodeAttrValue(value) {
     .replaceAll('"', '&#x22;')
     .replaceAll("'", '&#x27;');
 }
+
+const encodeText = (value) => String(value)
+  .replaceAll('&', '&amp;')
+  .replaceAll('<', '&lt;')
+  .replaceAll('>', '&gt;');
 
 const encodeAttrQuotes = (value) => String(value).replaceAll('"', '&#x22;');
 
@@ -884,7 +894,7 @@ export function doc2aem(ydoc) {
   let daHTML = '';
   if (Object.keys(daMetadata).length > 0) {
     const daRows = Object.entries(daMetadata)
-      .map(([key, value]) => `<div><div>${key}</div><div>${value}</div></div>`)
+      .map(([key, value]) => `<div><div>${encodeText(key)}</div><div>${encodeText(value)}</div></div>`)
       .join('');
     daHTML = `\n  <div class="da-metadata">${daRows}</div>`;
   }
