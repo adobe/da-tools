@@ -269,6 +269,20 @@ describe('applyCopy', () => {
       expect(metadataOf(result.html).rolloutbase.content.textContent).to.equal(expected);
     });
 
+    it('keeps the source baseline and order when a snapshot is involved', async () => {
+      const meta = { title: 'T', rolloutbase: `${PATH}|abcdef012345`, rolloutorder: 'x' };
+      const source = page('<div><p>A</p></div>', meta);
+      const snapshot = '/org/site/.snapshots/s1/page.html';
+      const forked = await copy({ source, path: snapshot, behavior: 'overwrite', recordBaseline: false });
+      const promoted = await copy({ source, sourcePath: snapshot, behavior: 'overwrite', recordBaseline: true });
+      [forked, promoted].forEach((result) => {
+        const metadata = metadataOf(result.html);
+        expect(Object.keys(metadata)).to.deep.equal(['title', 'rolloutbase', 'rolloutorder']);
+        expect(metadata.rolloutbase.content.textContent).to.equal(meta.rolloutbase);
+        expect(result.baseline).to.equal(null);
+      });
+    });
+
     it('writes the diff labels', async () => {
       const result = await copy({ source: page('<div><p>A</p></div>'), behavior: 'overwrite', recordBaseline: false, labels: { local: 'Mine', upstream: 'Theirs' } });
       expect(metadataOf(result.html)['diff-label-local'].content.textContent).to.equal('Mine');
@@ -311,6 +325,18 @@ describe('applyCopy', () => {
       const target = page('<div><p>A local</p></div>', { rolloutbase: `${PATH}|abcdef012345`, rolloutorder: 'x', title: 'T' });
       const result = await copy({ source: page('<div><p>A</p></div>'), target, behavior: 'merge', recordBaseline: false });
       expect(Object.keys(metadataOf(result.html))).to.deep.equal(['title']);
+    });
+
+    it('keeps the target baseline and order when merging a snapshot back', async () => {
+      const base = `${PATH}|abcdef012345`;
+      const target = page('<div><p>A local</p></div>', { rolloutbase: base, rolloutorder: 'x', title: 'T' });
+      const source = page('<div><p>A</p></div>', { rolloutbase: '/other|abcdef012345' });
+      const result = await copy({
+        source, target, sourcePath: '/org/site/.snapshots/s1/page.html', behavior: 'merge', recordBaseline: false,
+      });
+      const metadata = metadataOf(result.html);
+      expect(Object.keys(metadata)).to.have.members(['title', 'rolloutbase', 'rolloutorder']);
+      expect(metadata.rolloutbase.content.textContent).to.equal(base);
     });
 
     it('overwrites an empty target', async () => {

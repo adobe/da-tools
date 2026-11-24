@@ -47,6 +47,7 @@ const { html, baseline, report } = await merge.applyCopy({
   target,             // target page HTML, or null when it doesn't exist
   behavior,           // 'smart-overwrite' | 'merge' | 'overwrite' | 'create-only'
   path,               // target path, for example /org/site/page.html
+  sourcePath,         // optional: source path, to detect a copy from a snapshot
   site, config,       // target site, and its translation config (equivalent hostnames)
   equivalentSites,    // optional: more site names whose links count as the target site's
   recordBaseline,     // required except for smart-overwrite: also write a baseline for smart-overwrite
@@ -68,7 +69,7 @@ if (html) await save(path, html);
 
 `report` holds `outcome` (`written`, `unchanged`, `skipped`, `needs-review`), the fallback `reason`, `counts` (`applied`, `keptLocal`, `needsReview`), the conflict `groups`, and `legacyHashes` (stored hashes matched from before canonicalizing).
 
-`merge` treats a target with an empty `main` as missing and writes the source. A `merge` or `overwrite` without `recordBaseline` removes the target's baseline.
+`merge` treats a target with an empty `main` as missing and writes the source. A `merge` or `overwrite` without `recordBaseline` removes the target's baseline. When `path` or `sourcePath` contains `/.snapshots/`, the baseline rows (`rolloutbase`, `rolloutorder`) stay instead, and no new baseline is recorded. `overwrite` keeps the source's rows. `merge` keeps the target's rows.
 
 `smart-overwrite` falls back to a merge with a reason: `no-baseline` (no baseline yet), `no-sync-point` (content outside `main > div` sections), or `page-too-large` (more than `MAX_UNITS` units on one side).
 

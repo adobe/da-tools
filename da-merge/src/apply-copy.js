@@ -167,15 +167,16 @@ export default function createApplyCopy({
   }
 
   async function overwrite({
-    source, path, recordBaseline, labels, hashing, reason = null,
+    source, path, recordBaseline, snapshot, labels, hashing, reason = null,
   }) {
     const copy = source.cloneNode(true);
     removeLocTags(copy);
     const metadata = readMetadata(copy.querySelector(DA_METADATA_SELECTOR));
-    [...REVIEW_KEYS, ROLLOUT_BASE_KEY, ROLLOUT_ORDER_KEY].forEach((key) => delete metadata[key]);
+    const dropped = snapshot ? REVIEW_KEYS : [...REVIEW_KEYS, ROLLOUT_BASE_KEY, ROLLOUT_ORDER_KEY];
+    dropped.forEach((key) => delete metadata[key]);
     let baseline = null;
     let fallback = reason;
-    if (recordBaseline && !isSnapshotPath(path)) {
+    if (recordBaseline && !snapshot) {
       if (getSectionedMain(copy)) {
         baseline = formatRolloutBase(path, await getBlockHashes({ doc: copy, ...hashing }));
         metadata[ROLLOUT_BASE_KEY] = baseline;
@@ -191,7 +192,7 @@ export default function createApplyCopy({
   }
 
   async function merge({
-    source, target, path, recordBaseline, labels, hashing, normalizeImages, reason, extra,
+    source, target, path, recordBaseline, snapshot, labels, hashing, normalizeImages, reason, extra,
   }) {
     const hadMarkup = !!target.querySelector(LOC_MARKERS);
     const unmarked = target.cloneNode(true);
@@ -200,7 +201,7 @@ export default function createApplyCopy({
     removeLocTags(cleanSource);
     const metadataEl = target.querySelector(DA_METADATA_SELECTOR);
     const sectioned = !!getSectionedMain(cleanSource);
-    const record = recordBaseline && !isSnapshotPath(path);
+    const record = recordBaseline && !snapshot;
     const baseline = record && sectioned
       ? formatRolloutBase(path, await getBlockHashes({ doc: cleanSource, ...hashing }))
       : null;
@@ -224,9 +225,11 @@ export default function createApplyCopy({
       reason: fallback ?? (hadMarkup ? REASON.reviewingOpenMarkup : REASON.differs),
     });
     const metadata = readMetadata(metadataEl);
-    delete metadata[ROLLOUT_ORDER_KEY];
-    if (baseline) metadata[ROLLOUT_BASE_KEY] = baseline;
-    else delete metadata[ROLLOUT_BASE_KEY];
+    if (!snapshot) {
+      delete metadata[ROLLOUT_ORDER_KEY];
+      if (baseline) metadata[ROLLOUT_BASE_KEY] = baseline;
+      else delete metadata[ROLLOUT_BASE_KEY];
+    }
     const html = toPageHtml(diffed.innerHTML, withLabels(metadata, labels));
     return finish({
       html, outcome: OUTCOME.written, reason: fallback, baseline, extra,
@@ -306,8 +309,8 @@ export default function createApplyCopy({
   }
 
   async function applyCopy({
-    source, target = null, behavior, path, site, config, equivalentSites = [], recordBaseline,
-    labels = {}, baselineHtml = null, normalizeImages, maxUnits = MAX_UNITS,
+    source, target = null, behavior, path, sourcePath, site, config, equivalentSites = [],
+    recordBaseline, labels = {}, baselineHtml = null, normalizeImages, maxUnits = MAX_UNITS,
   }) {
     if (!BEHAVIORS.includes(behavior)) throw new TypeError(`Unknown behavior: ${behavior}`);
     if (typeof source !== 'string' || !path) throw new TypeError('applyCopy requires source HTML and a path');
@@ -333,8 +336,16 @@ export default function createApplyCopy({
     const extra = { legacyHashes };
     const targetMain = targetDoc && getSectionedMain(targetDoc);
     const missing = !targetDoc || (targetMain && isEmptyMain(targetMain));
+    const snapshot = isSnapshotPath(path) || (!!sourcePath && isSnapshotPath(sourcePath));
     const options = {
-      source: sourceDoc, target: targetDoc, path, recordBaseline, labels, hashing, normalizeImages,
+      source: sourceDoc,
+      target: targetDoc,
+      path,
+      recordBaseline,
+      snapshot,
+      labels,
+      hashing,
+      normalizeImages,
     };
     if (behavior === 'smart-overwrite') {
       return smartOverwrite({
