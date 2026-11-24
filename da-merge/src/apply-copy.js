@@ -95,11 +95,12 @@ export default function createApplyCopy({
   } = regional;
   const { getSectionedMain, smartRollout } = smart;
 
-  const toDoc = (html) => {
+  const toDoc = (html, side) => {
     const canonical = parse(canonicalize(html));
     if (contentOf(canonical) !== contentOf(parse(html))) {
       const error = new Error('Canonicalizing would change the page content');
       error.code = CANONICALIZE_LOSS;
+      error.side = side;
       throw error;
     }
     return canonical;
@@ -282,7 +283,7 @@ export default function createApplyCopy({
     const destMetadata = readMetadata(metadataEl);
     const keptBase = destMetadata[ROLLOUT_BASE_KEY];
     const keptOrder = readRolloutOrder(metadataEl);
-    const baselineDoc = baselineHtml ? toDoc(baselineHtml) : null;
+    const baselineDoc = baselineHtml ? toDoc(baselineHtml, 'baseline') : null;
     const result = await smartRollout({
       source: cleanSource, dest: target, path, snapshot, ...hashing, baselineDoc, maxUnits,
     });
@@ -344,8 +345,8 @@ export default function createApplyCopy({
       throw new TypeError(`applyCopy requires recordBaseline for ${behavior}`);
     }
     const hashing = { site, config: { ...config, equivalentSites } };
-    const sourceDoc = toDoc(source);
-    const targetDoc = target ? toDoc(target) : null;
+    const sourceDoc = toDoc(source, 'source');
+    const targetDoc = target ? toDoc(target, 'target') : null;
     let legacyHashes = 0;
     if (targetDoc) {
       dropOrphanBases(targetDoc);
@@ -395,7 +396,7 @@ export default function createApplyCopy({
     if (!path.toLowerCase().endsWith('.html')) return { sync: 'sheet' };
     if (isSnapshotPath(path)) return { sync: 'snapshot' };
     if (!target) return { sync: 'missing' };
-    const canonicalTarget = toDoc(target);
+    const canonicalTarget = toDoc(target, 'target');
     const hashing = { site, config: { ...config, equivalentSites } };
     const targetDoc = parse(target);
     const main = getSectionedMain(targetDoc);
@@ -403,7 +404,7 @@ export default function createApplyCopy({
     if (isEmptyMain(main)) return { sync: 'missing' };
     if (targetDoc.querySelector(LOC_MARKERS)) return { sync: 'unresolved' };
     if (getRolloutBase(targetDoc.querySelector(DA_METADATA_SELECTOR), path)) return { sync: 'in-sync' };
-    const sourceDoc = toDoc(source);
+    const sourceDoc = toDoc(source, 'source');
     if (!getSectionedMain(sourceDoc)) throw new Error('Source content not found or malformed');
     removeLocTags(sourceDoc);
     if (dryRun) {

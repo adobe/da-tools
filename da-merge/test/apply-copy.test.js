@@ -258,6 +258,22 @@ describe('applyCopy', () => {
       expect(error?.code).to.equal('canonicalize-loss');
     });
 
+    it('names the source as the side that canonicalizing would damage', async () => {
+      const error = await errorOf(copy({
+        source: page('<div><p>Lost</p></div>'), target: page('<div><p>A</p></div>'), behavior: 'merge', recordBaseline: false,
+      }, engine((html) => html.replace('Lost', ''))));
+      expect(error?.code).to.equal('canonicalize-loss');
+      expect(error.side).to.equal('source');
+    });
+
+    it('names the target as the side that canonicalizing would damage', async () => {
+      const error = await errorOf(copy({
+        source: page('<div><p>A</p></div>'), target: page('<div><p>Lost</p></div>'), behavior: 'merge', recordBaseline: false,
+      }, engine((html) => html.replace('Lost', ''))));
+      expect(error?.code).to.equal('canonicalize-loss');
+      expect(error.side).to.equal('target');
+    });
+
     it('refuses to copy when canonicalizing changes the text or the media and links', async () => {
       const source = page('<div><p>A <a href="/x">link</a></p><p><img src="a.png"></p></div>');
       const changes = [
