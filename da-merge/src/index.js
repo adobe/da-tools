@@ -22,7 +22,9 @@ export {
   formatRolloutOrder, readRolloutOrder, isEmptyMain, withMetadataRow, withBaselineRow,
   countLocalBlocks, MAX_UNITS,
 } from './smart-overwrite.js';
-export { BEHAVIORS, OUTCOME, toPageHtml } from './apply-copy.js';
+export {
+  BEHAVIORS, OUTCOME, CANONICALIZE_LOSS, toPageHtml,
+} from './apply-copy.js';
 export { REASON } from './markup.js';
 export {
   HASH_LENGTH, ACCEPTED_KEY, REJECTED_KEY, ROLLOUT_BASE_KEY, ROLLOUT_ORDER_KEY,

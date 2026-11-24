@@ -9,8 +9,10 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-import { expect, daMerge, rawMerge } from './test-utils.js';
 import {
+  expect, daMerge, rawMerge, dom,
+} from './test-utils.js';
+import DaMerge, {
   removeLocTags, formatRolloutBase, getElementMetadata, DA_METADATA_SELECTOR,
 } from '../src/index.js';
 
@@ -192,6 +194,48 @@ describe('applyCopy', () => {
       error = e;
     }
     expect(error).to.be.instanceOf(TypeError);
+  });
+
+  describe('canonicalize loss guard', () => {
+    const engine = (change) => new DaMerge({ ...dom, canonicalize: change });
+    const errorOf = (promise) => promise.then(() => null, (e) => e);
+
+    it('refuses to copy when canonicalizing drops a second main', async () => {
+      const target = '<body><main><div><p>A</p></div></main><main><p>Localized</p></main></body>';
+      const error = await errorOf(copy({ source: page('<div><p>A2</p></div>'), target, behavior: 'smart-overwrite' }));
+      expect(error?.code).to.equal('canonicalize-loss');
+    });
+
+    it('refuses to copy when canonicalizing changes the text or the media and links', async () => {
+      const source = page('<div><p>A <a href="/x">link</a></p><p><img src="a.png"></p></div>');
+      const changes = [
+        (html) => html.replace('A ', 'B '),
+        (html) => html.replace(/<img[^>]*>/, ''),
+        (html) => html.replace(' href="/x"', ''),
+      ];
+      const errors = await Promise.all(changes.map((change) => errorOf(copy({
+        source, behavior: 'overwrite', recordBaseline: false,
+      }, engine(change)))));
+      expect(errors.map((e) => e?.code)).to.deep.equal(Array(3).fill('canonicalize-loss'));
+    });
+
+    it('ignores what canonicalizing drops on purpose', async () => {
+      const raw = '<body><header><p>Nav</p></header><main><div id="s1"><p>A</p><p><a id="top"></a></p></div></main><footer><p>Foot</p></footer></body>';
+      const strip = (html) => html.replace(/<header>.*<\/header>/, '<header></header>')
+        .replace(/<footer>.*<\/footer>/, '<footer></footer>').replace(' id="s1"', '').replace('<p><a id="top"></a></p>', '');
+      const result = await copy({
+        source: raw, target: raw, behavior: 'merge', recordBaseline: false,
+      }, engine(strip));
+      expect(result.report.outcome).to.equal('unchanged');
+    });
+
+    it('refuses to mark a page in sync when canonicalizing loses content', async () => {
+      const target = page('<div><p>A local</p></div>');
+      const error = await errorOf(engine((html) => html.replace('A local', '')).markInSync({
+        source: page('<div><p>A</p></div>'), target, path: PATH, site, config,
+      }));
+      expect(error?.code).to.equal('canonicalize-loss');
+    });
   });
 
   it('requires recordBaseline for every behavior but smart-overwrite', async () => {

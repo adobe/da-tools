@@ -60,6 +60,17 @@ function dropOrphanBases(doc) {
   });
 }
 
+export const CANONICALIZE_LOSS = 'canonicalize-loss';
+const COUNTED = ['img', 'picture', 'video', 'a[href]'];
+
+function contentOf(doc) {
+  const body = doc.body.cloneNode(true);
+  [...body.children].filter((el) => ['HEADER', 'FOOTER'].includes(el.nodeName))
+    .forEach((el) => el.remove());
+  const text = body.textContent.replace(/\s+/g, '');
+  return [text, ...COUNTED.map((selector) => body.querySelectorAll(selector).length)].join('|');
+}
+
 function setMetadataText(doc, key, value) {
   const rows = [...doc.querySelectorAll(`${DA_METADATA_SELECTOR} > div`)];
   const row = rows.find((el) => el.children[0]?.textContent.trim().toLowerCase() === key);
@@ -74,7 +85,15 @@ export default function createApplyCopy({
   } = regional;
   const { getSectionedMain, smartRollout } = smart;
 
-  const toDoc = (html) => parse(canonicalize(html));
+  const toDoc = (html) => {
+    const canonical = parse(canonicalize(html));
+    if (contentOf(canonical) !== contentOf(parse(html))) {
+      const error = new Error('Canonicalizing would change the page content');
+      error.code = CANONICALIZE_LOSS;
+      throw error;
+    }
+    return canonical;
+  };
 
   function legacyMap(raw, canonical) {
     const map = new Map();
@@ -366,6 +385,7 @@ export default function createApplyCopy({
     if (!path.toLowerCase().endsWith('.html')) return { sync: 'sheet' };
     if (isSnapshotPath(path)) return { sync: 'snapshot' };
     if (!target) return { sync: 'missing' };
+    const canonicalTarget = toDoc(target);
     const hashing = { site, config: { ...config, equivalentSites } };
     const targetDoc = parse(target);
     const main = getSectionedMain(targetDoc);
@@ -379,7 +399,7 @@ export default function createApplyCopy({
     if (dryRun) {
       const differences = countLocalBlocks(
         await getContentHashes({ doc: sourceDoc, ...hashing }),
-        await getContentHashes({ doc: toDoc(target), ...hashing }),
+        await getContentHashes({ doc: canonicalTarget, ...hashing }),
       );
       return { sync: 'to-mark', differences };
     }
