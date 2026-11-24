@@ -20,7 +20,6 @@ export const KIND = { added: 'added', changed: 'changed' };
 export const REASON = {
   differs: 'differs',
   noBaseline: 'no-baseline',
-  noSyncPoint: 'no-sync-point',
   pageTooLarge: 'page-too-large',
   bothChanged: 'both-changed',
   reviewingOpenMarkup: 'reviewing-open-markup',

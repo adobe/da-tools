@@ -175,19 +175,14 @@ export default function createApplyCopy({
     const dropped = snapshot ? REVIEW_KEYS : [...REVIEW_KEYS, ROLLOUT_BASE_KEY, ROLLOUT_ORDER_KEY];
     dropped.forEach((key) => delete metadata[key]);
     let baseline = null;
-    let fallback = reason;
     if (recordBaseline && !snapshot) {
-      if (getSectionedMain(copy)) {
-        baseline = formatRolloutBase(path, await getBlockHashes({ doc: copy, ...hashing }));
-        metadata[ROLLOUT_BASE_KEY] = baseline;
-      } else {
-        fallback = REASON.noSyncPoint;
-      }
+      baseline = formatRolloutBase(path, await getBlockHashes({ doc: copy, ...hashing }));
+      metadata[ROLLOUT_BASE_KEY] = baseline;
     }
     const html = toPageHtml(mainHtml(copy), withLabels(metadata, labels));
     const applied = (await getContentHashes({ doc: copy, ...hashing })).length;
     return finish({
-      html, outcome: OUTCOME.written, reason: fallback, baseline, counts: { applied },
+      html, outcome: OUTCOME.written, reason, baseline, counts: { applied },
     });
   }
 
@@ -200,12 +195,11 @@ export default function createApplyCopy({
     removeLocTags(unmarked);
     removeLocTags(cleanSource);
     const metadataEl = target.querySelector(DA_METADATA_SELECTOR);
-    const sectioned = !!getSectionedMain(cleanSource);
     const record = recordBaseline && !snapshot;
-    const baseline = record && sectioned
+    const baseline = record
       ? formatRolloutBase(path, await getBlockHashes({ doc: cleanSource, ...hashing }))
       : null;
-    const fallback = reason ?? (record && !sectioned ? REASON.noSyncPoint : null);
+    const fallback = reason ?? null;
     const same = record
       ? !hadMarkup && collapsed(mainHtml(cleanSource)) === collapsed(mainHtml(unmarked))
       : cleanSource.body.outerHTML === unmarked.body.outerHTML;
@@ -237,27 +231,8 @@ export default function createApplyCopy({
   }
 
   async function smartOverwrite({
-    source, target, path, snapshot, labels, hashing, normalizeImages, baselineHtml, maxUnits, extra,
+    source, target, path, labels, hashing, baselineHtml, maxUnits, extra,
   }) {
-    const unsectioned = !getSectionedMain(source) || (target && !getSectionedMain(target));
-    if (unsectioned) {
-      if (!target) {
-        return overwrite({
-          source, path, snapshot, labels, hashing, reason: REASON.noSyncPoint,
-        });
-      }
-      return merge({
-        source,
-        target,
-        path,
-        snapshot,
-        labels,
-        hashing,
-        normalizeImages,
-        reason: REASON.noSyncPoint,
-        extra,
-      });
-    }
     const cleanSource = source.cloneNode(true);
     removeLocTags(cleanSource);
     const metadataEl = target?.querySelector(DA_METADATA_SELECTOR);

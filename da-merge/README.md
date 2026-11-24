@@ -15,7 +15,7 @@ npm install @adobe/da-merge
 Pass in a DOM implementation and a canonicalizer once, when you create the engine.
 
 - **DOM:** the browser's globals, or [linkedom](https://github.com/WebReflection/linkedom) in a worker or Node.js.
-- **canonicalize:** turns page HTML into the form the editor saves. Pages are compared in this form, so an unedited page never shows false local edits. Use [`@adobe/da-parser`](../da-parser), the same version the editors run.
+- **canonicalize:** turns page HTML into the form the editor saves. Pages are compared in this form, so an unedited page never shows false local edits. It must return the content in `main > div` sections, as da-parser does. Use [`@adobe/da-parser`](../da-parser), the same version the editors run.
 
 ```javascript
 import * as Y from 'yjs';
@@ -71,7 +71,7 @@ if (html) await save(path, html);
 
 `merge` treats a target with an empty `main` as missing and writes the source. A `merge` or `overwrite` without `recordBaseline` removes the target's baseline. When `path` or `sourcePath` contains `/.snapshots/`, the baseline rows (`rolloutbase`, `rolloutorder`) stay instead, and no new baseline is recorded. `overwrite` keeps the source's rows. `merge` keeps the target's rows.
 
-`smart-overwrite` falls back to a merge with a reason: `no-baseline` (no baseline yet), `no-sync-point` (content outside `main > div` sections), or `page-too-large` (more than `MAX_UNITS` units on one side).
+`smart-overwrite` falls back to a merge with a reason: `no-baseline` (no baseline yet) or `page-too-large` (more than `MAX_UNITS` units on one side).
 
 ## Diff markup
 
@@ -89,7 +89,7 @@ Each conflict group has an id. Every marked unit says which side it is from.
 | `data-diff-group` | `g1`, `g2`, … unique in the page |
 | `data-diff-side` | `source`, `local` |
 | `data-diff-kind` | `changed` (both sides), `added` (one side) |
-| `data-diff-reason` | on the first source unit of a group: `differs`, `both-changed`, `no-baseline`, `no-sync-point`, `page-too-large`, `reviewing-open-markup` |
+| `data-diff-reason` | on the first source unit of a group: `differs`, `both-changed`, `no-baseline`, `page-too-large`, `reviewing-open-markup` |
 
 `<da-diff-base>` is written only when `baselineHtml` is given. The editors must run a `@adobe/da-parser` that keeps this markup, or their first save drops it.
 
