@@ -67,7 +67,9 @@ if (html) await save(path, html);
 | `merge` | Marks every difference for review (2-way). |
 | `smart-overwrite` | Compares the source and the target with the baseline (3-way). It applies changes made on one side only, and marks only conflicts. Groups that are still open stay as they are. |
 
-`report` holds `outcome` (`written`, `unchanged`, `skipped`, `needs-review`), the fallback `reason`, `counts` (`applied`, `keptLocal`, `needsReview`), the conflict `groups`, and `legacyHashes` (stored hashes matched from before canonicalizing).
+`report` holds `outcome` (`written`, `unchanged`, `skipped`, `needs-review`), the fallback `reason`, `counts` (`applied`, `keptLocal`, `needsReview`), the conflict `groups`, `skipped` (conflicts left as the page has them), `contentChanged`, and `legacyHashes` (stored hashes matched from before canonicalizing).
+
+`outcome` is `needs-review` whenever the page has open groups after the copy, even when `html` is `null`. Use `html === null` to tell that nothing was written. `counts.needsReview` counts the open groups on the page to save, or on the target when `html` is `null`. `contentChanged` is `true` when `html` changes the page content, not only its metadata.
 
 `merge` treats a target with an empty `main` as missing and writes the source. A `merge` or `overwrite` without `recordBaseline` removes the target's baseline. When `path` or `sourcePath` contains `/.snapshots/`, the baseline rows (`rolloutbase`, `rolloutorder`) stay instead, and no new baseline is recorded. `overwrite` keeps the source's rows. `merge` keeps the target's rows.
 

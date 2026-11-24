@@ -138,30 +138,44 @@ export default function createApplyCopy({
   function finish({
     html, outcome, reason = null, baseline = null, counts = {}, extra = {},
   }) {
-    const summary = html ? diffSummary(parse(html)) : { groups: [] };
-    const needsReview = summary.groups.length;
-    const marked = !!html && !!parse(html).querySelector(LOC_MARKERS);
-    const finalOutcome = outcome === OUTCOME.written && marked ? OUTCOME.needsReview : outcome;
     return {
       html,
       baseline,
       report: {
-        outcome: finalOutcome,
+        outcome,
         reason,
-        counts: {
-          applied: 0, keptLocal: 0, ...counts, needsReview,
-        },
-        groups: summary.groups.map(({
-          id, reason: groupReason, sides, kinds,
-        }) => ({
-          id, reason: groupReason, sides, kinds,
-        })),
+        counts: { applied: 0, keptLocal: 0, ...counts },
         skipped: 0,
         removedUpstream: 0,
         reordered: false,
         baselineContent: 'n/a',
         legacyHashes: 0,
         ...extra,
+      },
+    };
+  }
+
+  function settle({ html, baseline, report }, target) {
+    const final = html ? parse(html) : target;
+    const summary = final ? diffSummary(final) : { groups: [] };
+    const open = !!final?.querySelector(LOC_MARKERS);
+    const reviewed = open && report.outcome !== OUTCOME.skipped;
+    const outcome = reviewed ? OUTCOME.needsReview : report.outcome;
+    const contentChanged = !!html
+      && (!target || collapsed(mainHtml(final)) !== collapsed(mainHtml(target)));
+    return {
+      html,
+      baseline,
+      report: {
+        ...report,
+        outcome,
+        counts: { ...report.counts, needsReview: summary.groups.length },
+        groups: summary.groups.map(({
+          id, reason, sides, kinds,
+        }) => ({
+          id, reason, sides, kinds,
+        })),
+        contentChanged,
       },
     };
   }
@@ -330,17 +344,20 @@ export default function createApplyCopy({
       hashing,
       normalizeImages,
     };
+    let result;
     if (behavior === 'smart-overwrite') {
-      return smartOverwrite({
+      result = await smartOverwrite({
         ...options, baselineHtml, maxUnits, extra,
       });
+    } else if (behavior === 'create-only' && targetDoc) {
+      result = finish({ html: null, outcome: OUTCOME.skipped, reason: 'exists' });
+    } else if (behavior === 'merge' && !missing) {
+      result = await merge({ ...options, extra });
+    } else {
+      const written = await overwrite(options);
+      result = { ...written, report: { ...written.report, ...extra } };
     }
-    if (behavior === 'create-only' && targetDoc) {
-      return finish({ html: null, outcome: OUTCOME.skipped, reason: 'exists' });
-    }
-    if (behavior === 'merge' && !missing) return merge({ ...options, extra });
-    const written = await overwrite(options);
-    return { ...written, report: { ...written.report, ...extra } };
+    return settle(result, targetDoc);
   }
 
   async function markInSync({

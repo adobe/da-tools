@@ -298,6 +298,7 @@ describe('applyCopy', () => {
         id: 'g1', reason: 'differs', sides: ['source', 'local'], kinds: ['changed'],
       }]);
       expect(result.report.counts.needsReview).to.equal(1);
+      expect(result.report.contentChanged).to.equal(true);
     });
 
     it('uses reason reviewing-open-markup when the target already had markup', async () => {
@@ -318,6 +319,7 @@ describe('applyCopy', () => {
         source: page('<div><p>A</p></div>'), target: page('<div><p>A</p></div>'), behavior: 'merge', recordBaseline: true,
       });
       expect(result.report.outcome).to.equal('unchanged');
+      expect(result.report.contentChanged).to.equal(false);
       expect(metadataOf(result.html).rolloutbase.content.textContent).to.equal(result.baseline);
     });
 
@@ -368,6 +370,18 @@ describe('applyCopy', () => {
       const result = await copy({ source: page('<div><p>A</p></div>'), target: resolveAsMine(first.html), behavior: 'smart-overwrite' });
       expect(result.html).to.equal(null);
       expect(result.report.outcome).to.equal('unchanged');
+      expect(result.report.contentChanged).to.equal(false);
+    });
+
+    it('needs review when nothing is written but the target still has open groups', async () => {
+      const source = page('<div><p>A</p><p>B</p></div>');
+      const first = await copy({ source, target: page('<div><p>A local</p><p>B</p></div>'), behavior: 'smart-overwrite' }, rawMerge);
+      const result = await copy({ source, target: first.html, behavior: 'smart-overwrite' }, rawMerge);
+      expect(result.html).to.equal(null);
+      expect(result.report.outcome).to.equal('needs-review');
+      expect(result.report.counts.needsReview).to.equal(first.report.counts.needsReview);
+      expect(result.report.counts.needsReview).to.be.greaterThan(0);
+      expect(result.report.contentChanged).to.equal(false);
     });
 
     it('reports missing base content for a conflict without a baseline page', async () => {
