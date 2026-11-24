@@ -1,0 +1,44 @@
+{
+  "name": "@adobe/da-merge",
+  "version": "1.0.0",
+  "description": "Merge engine for DA copies: diff markup, smart merge, and smart overwrite",
+  "main": "src/index.js",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "test": "npm run test:browser && npm run test:node",
+    "test:browser": "wtr \"./test/*.test.js\" --node-resolve --coverage",
+    "test:node": "c8 mocha \"./test/*.test.js\"",
+    "prepublishOnly": "npm run lint && npm test",
+    "release": "npm publish"
+  },
+  "mocha": {
+    "exit": true
+  },
+  "author": "",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/adobe/da-tools.git",
+    "directory": "da-merge"
+  },
+  "devDependencies": {
+    "@adobe/eslint-config-helix": "3.0.35",
+    "@eslint/config-helpers": "0.7.0",
+    "@esm-bundle/chai": "4.3.4-fix.0",
+    "@web/test-runner": "1.0.0",
+    "@web/test-runner-commands": "1.0.1",
+    "c8": "12.0.0",
+    "chai": "6.3.0",
+    "eslint": "9.39.5",
+    "globals": "17.14.0",
+    "linkedom": "0.18.15",
+    "mocha": "11.8.0"
+  }
+}

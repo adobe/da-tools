@@ -7,6 +7,7 @@ A collection of tools for the [DA (Document Authoring)](https://da.live) platfor
 | Tool | Description |
 |------|-------------|
 | [da-parser](./da-parser) | Parser for converting DA Admin HTML to ProseMirror/YDoc format |
+| [da-merge](./da-merge) | Merge engine for DA copies: diff markup, smart merge, and smart overwrite |
 
 ## Getting Started
 
@@ -32,6 +33,7 @@ da-tools/
 │   ├── src/
 │   ├── test/
 │   └── ...
+├── da-merge/             # Merge engine for loc and MSM copies
 └── (future tools)
 ```
 
