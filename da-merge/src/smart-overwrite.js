@@ -161,12 +161,13 @@ export default function createSmartOverwrite({ Node, regional }) {
 
   async function smartRollout({
     source, dest, path, site, config, baselineDoc = null, maxUnits = MAX_UNITS,
+    snapshot = isSnapshotPath(path),
   }) {
     if (!dest) return copySource({ source, site, config });
     const metadataEl = dest.querySelector(DA_METADATA_SELECTOR);
     const daMetadata = readMetadata(metadataEl);
     // A snapshot never merges against a sync point: it only keeps the live page's.
-    const base = !isSnapshotPath(path) && getRolloutBase(metadataEl, path);
+    const base = !snapshot && getRolloutBase(metadataEl, path);
     if (base) {
       const sourceHashes = await getBlockHashes({ doc: source, site, config });
       if (sourceHashes.join() === base.join()) return { unchanged: true, reordered: false };

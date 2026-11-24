@@ -494,6 +494,30 @@ describe('applyCopy', () => {
       expect(result.report.contentChanged).to.equal(false);
     });
 
+    it('reviews a snapshot merged back without its baseline, and keeps the target rows', async () => {
+      const source = page('<div><p>A</p></div>');
+      const hashes = await daMerge.getBlockHashes({ doc: daMerge.parse(source), site, config });
+      const base = formatRolloutBase(PATH, hashes);
+      const target = page('<div><p>A local</p></div>', { rolloutbase: base, rolloutorder: 'x' });
+      const result = await copy({
+        source, target, sourcePath: '/org/site/.snapshots/s1/page.html', behavior: 'smart-overwrite',
+      });
+      expect(result.report.reason).to.equal('no-baseline');
+      expect(result.report.outcome).to.equal('needs-review');
+      const metadata = metadataOf(result.html);
+      expect(metadata.rolloutbase.content.textContent).to.equal(base);
+      expect(metadata.rolloutorder.content.textContent).to.equal('x');
+    });
+
+    it('keeps the source rows on a snapshot fork without a target', async () => {
+      const meta = { rolloutbase: `${PATH}|abcdef012345`, rolloutorder: 'x' };
+      const result = await copy({ source: page('<div><p>A</p></div>', meta), path: '/org/site/.snapshots/s1/page.html', behavior: 'smart-overwrite' });
+      const metadata = metadataOf(result.html);
+      expect(metadata.rolloutbase.content.textContent).to.equal(meta.rolloutbase);
+      expect(metadata.rolloutorder.content.textContent).to.equal('x');
+      expect(result.baseline).to.equal(null);
+    });
+
     it('reports missing base content for a conflict without a baseline page', async () => {
       const base = page('<div><p>A</p><p>B</p><p>C</p></div>');
       const first = await copy({ source: base, target: base, behavior: 'smart-overwrite' });

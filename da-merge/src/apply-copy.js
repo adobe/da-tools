@@ -274,7 +274,7 @@ export default function createApplyCopy({
   }
 
   async function smartOverwrite({
-    source, target, path, labels, hashing, baselineHtml, maxUnits, extra,
+    source, target, path, snapshot, labels, hashing, baselineHtml, maxUnits, extra,
   }) {
     const cleanSource = source.cloneNode(true);
     removeLocTags(cleanSource);
@@ -284,7 +284,7 @@ export default function createApplyCopy({
     const keptOrder = readRolloutOrder(metadataEl);
     const baselineDoc = baselineHtml ? toDoc(baselineHtml) : null;
     const result = await smartRollout({
-      source: cleanSource, dest: target, path, ...hashing, baselineDoc, maxUnits,
+      source: cleanSource, dest: target, path, snapshot, ...hashing, baselineDoc, maxUnits,
     });
     const newlyReordered = !!result.reordered && result.seenOrder !== keptOrder;
     const reportExtra = {
@@ -303,12 +303,12 @@ export default function createApplyCopy({
     }
     const metadata = result.daMetadata;
     let baseline = keptBase ?? null;
-    if (!isSnapshotPath(path)) {
+    if (!snapshot) {
       baseline = formatRolloutBase(path, result.sourceHashes);
       metadata[ROLLOUT_BASE_KEY] = baseline;
       if (result.reordered) metadata[ROLLOUT_ORDER_KEY] = result.order;
       else delete metadata[ROLLOUT_ORDER_KEY];
-    } else {
+    } else if (target) {
       if (keptBase) metadata[ROLLOUT_BASE_KEY] = keptBase;
       else delete metadata[ROLLOUT_BASE_KEY];
       if (keptOrder) metadata[ROLLOUT_ORDER_KEY] = destMetadata[ROLLOUT_ORDER_KEY];
