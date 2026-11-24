@@ -359,6 +359,17 @@ function resolveConflict({ cluster, context }) {
     if (resolvable && asLocal.join() === toHashes(upstreamBlocks).join()) {
       return { blocks: upstreamBlocks };
     }
+    const [list] = destBlocks;
+    const oneList = context.mergeList && destBlocks.length === 1 && upstreamBlocks.length === 1
+      && cluster.end - cluster.start === 1 && list.list?.base === context.base[cluster.start];
+    const merged = oneList && context.mergeList({ dest: list, source: upstreamBlocks[0] });
+    if (merged) {
+      return {
+        blocks: [merged.entry],
+        skipped: merged.skipped,
+        removedUpstream: merged.removedUpstream,
+      };
+    }
     return { blocks: destBlocks, skipped: count };
   }
   const destTouched = new Set(destHunks.flatMap(indexesOf));
@@ -505,7 +516,7 @@ const endsRemovedSection = ({
     && indexesOf(other).some(isBreak) && !other.blocks.some(hasBreak));
 
 function mergeBlocks({
-  base, source, dest, applyMoves, fixed = new Set(),
+  base, source, dest, applyMoves, fixed = new Set(), mergeList = null,
 }) {
   const {
     blocks: merged, matches, applied, reverted,
@@ -535,6 +546,7 @@ function mergeBlocks({
     toSource: sourceDiff.matches,
     addsBlocks: inserted.some((block) => !isSection(block) && !inBase.has(block.hash)),
     fixed,
+    mergeList,
   };
 
   const blocks = [];
@@ -615,7 +627,7 @@ const keepsApplied = ({ tried, plain, pageOnly }) => {
  *   `baseline` becomes the next base. Fields and conflict rows: docs/rollout-smart-overwrite.md
  */
 export default function threeWayMerge({
-  base, source: upstream, dest, rejected = new Set(), fixed = new Set(),
+  base, source: upstream, dest, rejected = new Set(), fixed = new Set(), mergeList = null,
 }) {
   const source = withoutRejected({ base, source: upstream, rejected });
   const baseKey = base.join();
@@ -634,7 +646,7 @@ export default function threeWayMerge({
   if (toHashes(dest).join() === baseKey) return clean(source);
   if (baseline.join() === toHashes(dest).join()) return clean(dest);
   const params = {
-    base, source, dest, fixed,
+    base, source, dest, fixed, mergeList,
   };
   const tried = mergeBlocks({ ...params, applyMoves: true });
   const plain = tried.applied.length ? mergeBlocks(params) : tried;

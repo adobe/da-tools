@@ -613,6 +613,78 @@ export default function createRegionalDiff({ Node, document }) {
     return getSmartBlockMap(wrapper).filter(({ block }) => !block.isSection).map(shortHash);
   }
 
+  const smartHash = (el) => shortHash({ hash: hashBlock(el, { smart: true }) });
+
+  const dropDiffAttrs = (el) => [...el.attributes]
+    .filter(({ name }) => name === ADDED_TAG || name.startsWith('data-diff-'))
+    .forEach(({ name }) => el.removeAttribute(name));
+
+  // An open list item: <li><da-diff-added>, <li da-diff-added>, <li><da-diff-deleted>, or
+  // <da-diff-deleted><li>. Returns the item without its markers, and which side it is from.
+  function listItem(child) {
+    const tag = child.nodeName.toLowerCase();
+    const li = tag === DELETED_TAG ? child.firstElementChild : child;
+    if (li?.nodeName !== 'LI' || (tag === DELETED_TAG && child.children.length !== 1)) return null;
+    const clean = li.cloneNode(true);
+    const inner = clean.firstElementChild;
+    const wrapped = inner && clean.childElementCount === 1
+      && [ADDED_TAG, DELETED_TAG].includes(inner.nodeName.toLowerCase()) ? inner : null;
+    if (wrapped) clean.replaceChildren(...wrapped.childNodes);
+    dropDiffAttrs(clean);
+    let side = SAME;
+    if (tag === DELETED_TAG || wrapped?.nodeName.toLowerCase() === DELETED_TAG) side = DELETED;
+    else if (wrapped || li.hasAttribute(ADDED_TAG)) side = ADDED;
+    return { clean, side };
+  }
+
+  // The items of a list as merge units. Open items keep their markup and their own hashes;
+  // `base` is the list's hash without the local side, which is what the last copy wrote.
+  function listUnits(list, normalized) {
+    const children = [...normalized.children];
+    const items = children.map(listItem);
+    if (items.some((item) => !item)) return null;
+    const sourceSide = items.filter(({ side }) => side !== ADDED);
+    const base = normalized.cloneNode(false);
+    sourceSide.forEach(({ clean }) => base.append(clean.cloneNode(true)));
+    return {
+      base: smartHash(base),
+      baseItems: sourceSide.map(({ clean }) => smartHash(clean)),
+      items: items.map(({ clean, side }, idx) => ({
+        block: list.children[idx],
+        hash: side === SAME ? smartHash(clean) : smartHash(children[idx]),
+        open: side !== SAME,
+      })),
+    };
+  }
+
+  function getListUnits(block, normalized) {
+    const [list, normalizedList] = block.fixed ? [block[0], normalized[0]] : [block, normalized];
+    if ((block.fixed && block.length !== 1) || !list || !isList(list)) return null;
+    return listUnits(list, normalizedList);
+  }
+
+  // Merges a list item by item when its open review is the only local change to it.
+  function mergeList({ dest, source }) {
+    const sameTag = dest.block[0].nodeName === source.block.nodeName;
+    if (!sameTag || !source.list || source.list.items.some(({ open }) => open)) return null;
+    const result = threeWayMerge({
+      base: dest.list.baseItems,
+      source: source.list.items,
+      dest: dest.list.items,
+      fixed: new Set(dest.list.items.filter(({ open }) => open).map(({ hash }) => hash)),
+    });
+    if (result.review || result.blocks.some(({ mark }) => mark)) return null;
+    const list = dest.block[0].cloneNode(false);
+    result.blocks.forEach(({ block }) => list.append(block.cloneNode(true)));
+    const block = [list];
+    block.fixed = true;
+    return {
+      entry: { block, hash: smartHash(list) },
+      skipped: result.skipped,
+      removedUpstream: result.removedUpstream,
+    };
+  }
+
   // Hashes (and merge's reviewHash, single blocks only) come from a link-normalized copy.
   async function getHashedBlocks(doc, { site, config, withReviewHash = false }) {
     const options = { smart: true };
@@ -621,6 +693,7 @@ export default function createRegionalDiff({ Node, document }) {
     return getBlocks(doc, options).map((block, idx) => ({
       block,
       hash: shortHash(hashed[idx]),
+      list: getListUnits(block, hashed[idx].block),
       ...(block.fixed ? { local: localHashes(hashed[idx].block) } : {}),
       ...(withReviewHash && isSingleBlock(block)
         ? { reviewHash: shortHash({ hash: hashBlock(hashed[idx].block) }) } : {}),
@@ -782,6 +855,7 @@ export default function createRegionalDiff({ Node, document }) {
       dest: destBlocks,
       rejected: new Set(rejectedBlocks.map(({ hash }) => hash)),
       fixed: new Set(destBlocks.filter(({ block }) => block.fixed).map(({ hash }) => hash)),
+      mergeList,
     });
     return {
       html: buildHtmlFromBlocks(blocks, {

@@ -175,6 +175,45 @@ describe('smartRollout with open markup', () => {
     expect(result.skipped).to.equal(0);
   });
 
+  describe('open groups inside a list', () => {
+    const rollout = async (dest, source) => {
+      const base = formatRolloutBase(PATH, await daMerge.getBlockHashes({ doc: toDoc('<div><ul><li>A</li><li>B</li></ul></div>'), site, config }));
+      return daMerge.smartRollout({
+        source: toDoc(`<div>${source}</div>`),
+        dest: toDoc(`<div>${dest}</div>`, { rolloutbase: base }),
+        path: PATH,
+        site,
+        config,
+      });
+    };
+
+    it('applies upstream item changes around an open added item', async () => {
+      const added = [
+        '<li><da-diff-added data-diff-group="g1" data-diff-side="local" data-diff-kind="added">Local</da-diff-added></li>',
+        '<li da-diff-added="" data-diff-group="g1" data-diff-side="local" data-diff-kind="added">Local</li>',
+      ];
+      const results = await Promise.all(added.map((item) => rollout(`<ul><li>A</li><li>B</li>${item}</ul>`, '<ul><li>A2</li><li>B</li></ul>')));
+      results.forEach((result, idx) => {
+        expect(result.html).to.equal(`<div><ul><li>A2</li><li>B</li>${added[idx]}</ul></div>`);
+        expect(result.skipped).to.equal(0);
+      });
+    });
+
+    it('keeps an open item that upstream changed again, and applies the rest', async () => {
+      const open = '<da-diff-deleted data-mdast="ignore" data-diff-group="g1" data-diff-side="source" data-diff-kind="changed"><li>B</li></da-diff-deleted><li da-diff-added="" data-diff-group="g1" data-diff-side="local" data-diff-kind="changed">B local</li>';
+      const result = await rollout(`<ul><li>A</li>${open}</ul>`, '<ul><li>A2</li><li>B2</li></ul>');
+      expect(result.html).to.equal(`<div><ul><li>A2</li>${open}</ul></div>`);
+      expect(result.skipped).to.equal(1);
+    });
+
+    it('keeps the list when its open markup does not match the baseline', async () => {
+      const dest = '<ul><li>A</li><li>C</li><li><da-diff-added>Local</da-diff-added></li></ul>';
+      const result = await rollout(dest, '<ul><li>A2</li><li>B</li></ul>');
+      expect(result.html).to.equal(`<div>${dest}</div>`);
+      expect(result.skipped).to.equal(1);
+    });
+  });
+
   it('falls back to a full review with reason page-too-large above the size cap', async () => {
     const base = formatRolloutBase(PATH, await daMerge.getBlockHashes({ doc: toDoc('<div><p>A</p><p>B</p></div>'), site, config }));
     const result = await daMerge.smartRollout({

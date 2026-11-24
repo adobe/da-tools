@@ -65,7 +65,7 @@ if (html) await save(path, html);
 | `create-only` | Writes the source when the target is missing. Otherwise `skipped`, even when the target is empty. |
 | `overwrite` | Writes the source. Local edits are lost. |
 | `merge` | Marks every difference for review (2-way). |
-| `smart-overwrite` | Compares the source and the target with the baseline (3-way). It applies changes made on one side only, and marks only conflicts. Groups that are still open stay as they are. |
+| `smart-overwrite` | Compares the source and the target with the baseline (3-way). It applies changes made on one side only, and marks only conflicts. Groups that are still open stay as they are. In a list with open items, the other items are merged one by one. |
 
 `report` holds `outcome` (`written`, `unchanged`, `skipped`, `needs-review`), the fallback `reason`, `counts` (`applied`, `keptLocal`, `needsReview`), the conflict `groups`, `skipped` (conflicts left as the page has them), `contentChanged`, and `legacyHashes` (stored hashes matched from before canonicalizing).
 
