@@ -602,6 +602,17 @@ export default function createRegionalDiff({ Node, document }) {
   // Like merge, rejections only apply to single upstream blocks (never to groups or list items).
   const isSingleBlock = (block) => !block.isSection && !Array.isArray(block);
 
+  function localHashes(unit) {
+    if (unit.some((el) => el.isSection)) return null;
+    const wrapper = document.createElement('div');
+    wrapper.innerHTML = `<main><div>${unit.map((el) => el.outerHTML).join('')}</div></main>`;
+    removeLocTags(wrapper);
+    wrapper.querySelectorAll('*').forEach((el) => [...el.attributes]
+      .filter(({ name }) => name.startsWith('data-diff-'))
+      .forEach(({ name }) => el.removeAttribute(name)));
+    return getSmartBlockMap(wrapper).filter(({ block }) => !block.isSection).map(shortHash);
+  }
+
   // Hashes (and merge's reviewHash, single blocks only) come from a link-normalized copy.
   async function getHashedBlocks(doc, { site, config, withReviewHash = false }) {
     const options = { smart: true };
@@ -610,6 +621,7 @@ export default function createRegionalDiff({ Node, document }) {
     return getBlocks(doc, options).map((block, idx) => ({
       block,
       hash: shortHash(hashed[idx]),
+      ...(block.fixed ? { local: localHashes(hashed[idx].block) } : {}),
       ...(withReviewHash && isSingleBlock(block)
         ? { reviewHash: shortHash({ hash: hashBlock(hashed[idx].block) }) } : {}),
     }));

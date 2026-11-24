@@ -349,7 +349,16 @@ function resolveConflict({ cluster, context }) {
   });
   const destBlocks = keepDest();
   const unmarked = { blocks: destBlocks, skipped: count };
-  if (destHunks.some((hunk) => hunk.blocks.some(({ hash }) => context.fixed.has(hash)))) {
+  const isFixed = ({ hash }) => context.fixed.has(hash);
+  if (destHunks.some((hunk) => hunk.blocks.some(isFixed))) {
+    const upstreamBlocks = destRange({
+      ...cluster, hunks: sourceHunks, dest: upstream, toDest: context.toSource,
+    });
+    const resolvable = destBlocks.every((entry) => !isFixed(entry) || entry.local);
+    const asLocal = destBlocks.flatMap((entry) => (isFixed(entry) ? entry.local : [entry.hash]));
+    if (resolvable && asLocal.join() === toHashes(upstreamBlocks).join()) {
+      return { blocks: upstreamBlocks };
+    }
     return { blocks: destBlocks, skipped: count };
   }
   const destTouched = new Set(destHunks.flatMap(indexesOf));

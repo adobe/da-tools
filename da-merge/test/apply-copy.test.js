@@ -162,6 +162,19 @@ describe('smartRollout with open markup', () => {
     expect(result.skipped).to.equal(1);
   });
 
+  it('clears an open group when the source now matches its local side', async () => {
+    const base = formatRolloutBase(PATH, await daMerge.getBlockHashes({ doc: toDoc('<div><p>A</p><p>B</p></div>'), site, config }));
+    const result = await daMerge.smartRollout({
+      source: toDoc('<div><p>A local</p><p>B2</p></div>'),
+      dest: toDoc(`<div>${openGroup}<p>B</p></div>`, { rolloutbase: base }),
+      path: PATH,
+      site,
+      config,
+    });
+    expect(result.html).to.equal('<div><p>A local</p><p>B2</p></div>');
+    expect(result.skipped).to.equal(0);
+  });
+
   it('falls back to a full review with reason page-too-large above the size cap', async () => {
     const base = formatRolloutBase(PATH, await daMerge.getBlockHashes({ doc: toDoc('<div><p>A</p><p>B</p></div>'), site, config }));
     const result = await daMerge.smartRollout({
