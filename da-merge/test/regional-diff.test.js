@@ -618,8 +618,8 @@ describe('smartMerge', () => {
       dest: doc('<div><p>L</p></div><div id="local"><p>A</p></div>'),
     });
     expect(html).to.equal('<div><p>L</p></div><div id="local"><p>A</p></div>');
-    expect(skipped).to.equal(0);
-    expect(review).to.be.true;
+    expect(skipped).to.equal(1);
+    expect(review).to.be.false;
   });
 
   it('marks a block group like merge does, on its first element', async () => {

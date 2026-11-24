@@ -348,7 +348,7 @@ function resolveConflict({ cluster, context }) {
     ...cluster, hunks, dest, toDest,
   });
   const destBlocks = keepDest();
-  const flag = { blocks: destBlocks, review: count };
+  const unmarked = { blocks: destBlocks, skipped: count };
   if (destHunks.some((hunk) => hunk.blocks.some(({ hash }) => context.fixed.has(hash)))) {
     return { blocks: destBlocks, skipped: count };
   }
@@ -364,14 +364,14 @@ function resolveConflict({ cluster, context }) {
     if (!repeated && !context.addsBlocks) {
       return { blocks: destBlocks, skipped: count, removedUpstream: deletes.length };
     }
-    if (pageBlocks.some(hasBreak)) return flag;
+    if (pageBlocks.some(hasBreak)) return unmarked;
     const marked = destHunks.map((hunk) => ({ ...hunk, blocks: withMark(hunk.blocks, 'local') }));
     return { blocks: keepDest(marked), review: count };
   }
   const upstreamBlocks = destRange({
     ...cluster, hunks: sourceHunks, dest: upstream, toDest: context.toSource,
   });
-  if ([...upstreamBlocks, ...destBlocks].some(hasBreak)) return flag;
+  if ([...upstreamBlocks, ...destBlocks].some(hasBreak)) return unmarked;
   return {
     blocks: [...withMark(upstreamBlocks, 'upstream'), ...withMark(destBlocks, 'local')],
     review: count,
@@ -390,7 +390,7 @@ function resolveCluster({ cluster, context }) {
   if (type === 'inserts') {
     const destBlocks = keepDest();
     if (isAmbiguousInsert(destBlocks) || isAmbiguousInsert(sourceBlocks)) {
-      return { blocks: destBlocks, review: sourceHunks.length };
+      return { blocks: destBlocks, skipped: sourceHunks.length };
     }
     return { blocks: mergeInserts(destBlocks, sourceBlocks) };
   }
@@ -561,8 +561,8 @@ function mergeBlocks({
   }) : { swaps: [], swapsAsBase: [] };
   return {
     blocks: result,
-    skipped: end.skipped,
-    review: end.review + misplaced,
+    skipped: end.skipped + misplaced,
+    review: end.review,
     removedUpstream: end.removedUpstream,
     reordered: swapsAsBase.length > 0,
     swaps,
