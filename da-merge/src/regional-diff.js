@@ -594,7 +594,7 @@ export default function createRegionalDiff({ Node, document }) {
 
   const getEquivalentSites = (config) => {
     const hostnames = findConfigValue(config, 'source.fragment.hostnames')?.split?.(',') || [];
-    return new Set(hostnames.map((hostname) => hostname.split('--')[1]));
+    return new Set([...hostnames.map((hostname) => hostname.split('--')[1]), ...(config?.equivalentSites || [])]);
   };
 
   const shortHash = (item) => item.hash.substring(0, HASH_LENGTH);

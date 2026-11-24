@@ -306,12 +306,15 @@ export default function createApplyCopy({
   }
 
   async function applyCopy({
-    source, target = null, behavior, path, site, config, recordBaseline = false, labels = {},
-    baselineHtml = null, normalizeImages, maxUnits = MAX_UNITS,
+    source, target = null, behavior, path, site, config, equivalentSites = [], recordBaseline,
+    labels = {}, baselineHtml = null, normalizeImages, maxUnits = MAX_UNITS,
   }) {
     if (!BEHAVIORS.includes(behavior)) throw new TypeError(`Unknown behavior: ${behavior}`);
     if (typeof source !== 'string' || !path) throw new TypeError('applyCopy requires source HTML and a path');
-    const hashing = { site, config };
+    if (behavior !== 'smart-overwrite' && typeof recordBaseline !== 'boolean') {
+      throw new TypeError(`applyCopy requires recordBaseline for ${behavior}`);
+    }
+    const hashing = { site, config: { ...config, equivalentSites } };
     const sourceDoc = toDoc(source);
     const targetDoc = target ? toDoc(target) : null;
     let legacyHashes = 0;
@@ -338,7 +341,7 @@ export default function createApplyCopy({
         ...options, baselineHtml, maxUnits, extra,
       });
     }
-    if (behavior === 'create-only' && !missing) {
+    if (behavior === 'create-only' && targetDoc) {
       return finish({ html: null, outcome: OUTCOME.skipped, reason: 'exists' });
     }
     if (behavior === 'merge' && !missing) return merge({ ...options, extra });
@@ -347,12 +350,12 @@ export default function createApplyCopy({
   }
 
   async function markInSync({
-    source, target, path, site, config, dryRun = false,
+    source, target, path, site, config, equivalentSites = [], dryRun = false,
   }) {
     if (!path.toLowerCase().endsWith('.html')) return { sync: 'sheet' };
     if (isSnapshotPath(path)) return { sync: 'snapshot' };
     if (!target) return { sync: 'missing' };
-    const hashing = { site, config };
+    const hashing = { site, config: { ...config, equivalentSites } };
     const targetDoc = parse(target);
     const main = getSectionedMain(targetDoc);
     if (!main) throw new Error('Unexpected destination content');

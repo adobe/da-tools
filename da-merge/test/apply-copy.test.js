@@ -187,22 +187,63 @@ describe('applyCopy', () => {
     expect(error).to.be.instanceOf(TypeError);
     error = undefined;
     try {
-      await copy({ behavior: 'merge' });
+      await copy({ behavior: 'merge', recordBaseline: false });
     } catch (e) {
       error = e;
     }
     expect(error).to.be.instanceOf(TypeError);
   });
 
+  it('requires recordBaseline for every behavior but smart-overwrite', async () => {
+    const source = page('<div><p>A</p></div>');
+    const errors = await Promise.all(['merge', 'overwrite', 'create-only'].map((behavior) => copy({ source, behavior })
+      .then(() => null, (e) => e)));
+    errors.forEach((error) => expect(error).to.be.instanceOf(TypeError));
+    const result = await copy({ source, behavior: 'smart-overwrite' });
+    expect(result.report.outcome).to.equal('written');
+  });
+
+  describe('equivalent sites', () => {
+    const linked = (host) => page(`<div><p><a href="https://main--${host}--org.aem.live/x">X</a></p></div>`);
+    const linkCopy = (options) => copy({
+      source: linked('other'), target: linked(site), behavior: 'merge', recordBaseline: false, ...options,
+    });
+
+    it('marks links to another site as different', async () => {
+      expect((await linkCopy()).report.counts.needsReview).to.equal(1);
+    });
+
+    it('treats links to an equivalent site as the same', async () => {
+      expect((await linkCopy({ equivalentSites: ['other'] })).report.counts.needsReview).to.equal(0);
+    });
+
+    it('also uses the hostnames from config', async () => {
+      const hostnames = { config: { data: [{ key: 'source.fragment.hostnames', value: 'main--third--org.aem.page' }] } };
+      const result = await linkCopy({ config: hostnames, equivalentSites: ['other'] });
+      expect(result.report.counts.needsReview).to.equal(0);
+      const third = await copy({
+        source: linked('third'), target: linked(site), behavior: 'merge', recordBaseline: false, config: hostnames, equivalentSites: ['other'],
+      });
+      expect(third.report.counts.needsReview).to.equal(0);
+    });
+  });
+
   describe('create-only', () => {
+    it('skips an empty target', async () => {
+      const result = await copy({ source: page('<div><p>A</p></div>'), target: page('<div></div>'), behavior: 'create-only', recordBaseline: false });
+      expect(result.html).to.equal(null);
+      expect(result.report.outcome).to.equal('skipped');
+      expect(result.report.reason).to.equal('exists');
+    });
+
     it('skips an existing target', async () => {
-      const result = await copy({ source: page('<div><p>A</p></div>'), target: page('<div><p>B</p></div>'), behavior: 'create-only' });
+      const result = await copy({ source: page('<div><p>A</p></div>'), target: page('<div><p>B</p></div>'), behavior: 'create-only', recordBaseline: false });
       expect(result.html).to.equal(null);
       expect(result.report.outcome).to.equal('skipped');
     });
 
     it('writes a missing target', async () => {
-      const result = await copy({ source: page('<div><p>A</p></div>'), behavior: 'create-only' });
+      const result = await copy({ source: page('<div><p>A</p></div>'), behavior: 'create-only', recordBaseline: false });
       expect(mainOf(result.html)).to.equal('<div><p>A</p></div>');
       expect(result.report.outcome).to.equal('written');
     });
@@ -213,7 +254,7 @@ describe('applyCopy', () => {
       const source = page('<div><p>A</p><da-diff-deleted data-mdast="ignore"><p>Up</p></da-diff-deleted></div>', {
         title: 'Title', acceptedhashes: 'abcdef012345', rolloutbase: '/other|abcdef012345',
       });
-      const result = await copy({ source, target: page('<div><p>Old</p></div>'), behavior: 'overwrite' });
+      const result = await copy({ source, target: page('<div><p>Old</p></div>'), behavior: 'overwrite', recordBaseline: false });
       expect(mainOf(result.html)).to.equal('<div><p>A</p></div>');
       expect(Object.keys(metadataOf(result.html))).to.deep.equal(['title']);
       expect(result.baseline).to.equal(null);
@@ -229,7 +270,7 @@ describe('applyCopy', () => {
     });
 
     it('writes the diff labels', async () => {
-      const result = await copy({ source: page('<div><p>A</p></div>'), behavior: 'overwrite', labels: { local: 'Mine', upstream: 'Theirs' } });
+      const result = await copy({ source: page('<div><p>A</p></div>'), behavior: 'overwrite', recordBaseline: false, labels: { local: 'Mine', upstream: 'Theirs' } });
       expect(metadataOf(result.html)['diff-label-local'].content.textContent).to.equal('Mine');
       expect(metadataOf(result.html)['diff-label-upstream'].content.textContent).to.equal('Theirs');
     });
@@ -237,7 +278,7 @@ describe('applyCopy', () => {
 
   describe('merge', () => {
     it('marks every difference with reason differs', async () => {
-      const result = await copy({ source: page('<div><p>A</p></div>'), target: page('<div><p>A local</p></div>'), behavior: 'merge' });
+      const result = await copy({ source: page('<div><p>A</p></div>'), target: page('<div><p>A local</p></div>'), behavior: 'merge', recordBaseline: false });
       expect(result.report.outcome).to.equal('needs-review');
       expect(result.report.groups).to.deep.equal([{
         id: 'g1', reason: 'differs', sides: ['source', 'local'], kinds: ['changed'],
@@ -247,13 +288,13 @@ describe('applyCopy', () => {
 
     it('uses reason reviewing-open-markup when the target already had markup', async () => {
       const target = page('<div><da-diff-deleted data-mdast="ignore"><p>Old</p></da-diff-deleted><p da-diff-added="">A local</p></div>');
-      const result = await copy({ source: page('<div><p>A</p></div>'), target, behavior: 'merge' });
+      const result = await copy({ source: page('<div><p>A</p></div>'), target, behavior: 'merge', recordBaseline: false });
       expect(result.report.groups[0].reason).to.equal('reviewing-open-markup');
       expect(result.html).to.not.include('Old');
     });
 
     it('writes nothing when the target matches the source', async () => {
-      const result = await copy({ source: page('<div><p>A</p></div>'), target: page('<div><p>A</p></div>'), behavior: 'merge' });
+      const result = await copy({ source: page('<div><p>A</p></div>'), target: page('<div><p>A</p></div>'), behavior: 'merge', recordBaseline: false });
       expect(result.html).to.equal(null);
       expect(result.report.outcome).to.equal('unchanged');
     });
@@ -268,12 +309,12 @@ describe('applyCopy', () => {
 
     it('drops a stale baseline and order without recordBaseline', async () => {
       const target = page('<div><p>A local</p></div>', { rolloutbase: `${PATH}|abcdef012345`, rolloutorder: 'x', title: 'T' });
-      const result = await copy({ source: page('<div><p>A</p></div>'), target, behavior: 'merge' });
+      const result = await copy({ source: page('<div><p>A</p></div>'), target, behavior: 'merge', recordBaseline: false });
       expect(Object.keys(metadataOf(result.html))).to.deep.equal(['title']);
     });
 
     it('overwrites an empty target', async () => {
-      const result = await copy({ source: page('<div><p>A</p></div>'), target: page('<div></div>'), behavior: 'merge' });
+      const result = await copy({ source: page('<div><p>A</p></div>'), target: page('<div></div>'), behavior: 'merge', recordBaseline: false });
       expect(mainOf(result.html)).to.equal('<div><p>A</p></div>');
       expect(result.report.outcome).to.equal('written');
     });
@@ -322,7 +363,7 @@ describe('applyCopy', () => {
 
     it('drops a base element whose group was resolved elsewhere', async () => {
       const target = page('<div><da-diff-base data-mdast="ignore" data-diff-group="g9"><p>Was</p></da-diff-base><p>A</p></div>');
-      const result = await copy({ source: page('<div><p>A</p><p>B</p></div>'), target, behavior: 'merge' }, rawMerge);
+      const result = await copy({ source: page('<div><p>A</p><p>B</p></div>'), target, behavior: 'merge', recordBaseline: false }, rawMerge);
       expect(result.html).to.not.include('Was');
     });
   });
@@ -360,6 +401,14 @@ describe('markInSync', () => {
   it('counts local differences in a dry run', async () => {
     const result = await sync({ source: page('<div><p>A</p><p>B</p></div>'), target: page('<div><p>A local</p><p>B</p></div>'), dryRun: true });
     expect(result).to.deep.equal({ sync: 'to-mark', differences: 1 });
+  });
+
+  it('treats links to an equivalent site as the same in a dry run', async () => {
+    const linked = (host) => page(`<div><p><a href="https://main--${host}--org.aem.live/x">X</a></p></div>`);
+    const result = await sync({
+      source: linked('other'), target: linked(site), dryRun: true, equivalentSites: ['other'],
+    });
+    expect(result).to.deep.equal({ sync: 'to-mark', differences: 0 });
   });
 
   it('writes the baseline of the current source into the target', async () => {

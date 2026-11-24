@@ -48,7 +48,8 @@ const { html, baseline, report } = await merge.applyCopy({
   behavior,           // 'smart-overwrite' | 'merge' | 'overwrite' | 'create-only'
   path,               // target path, for example /org/site/page.html
   site, config,       // target site, and its translation config (equivalent hostnames)
-  recordBaseline,     // merge and overwrite: also write a baseline for smart-overwrite
+  equivalentSites,    // optional: more site names whose links count as the target site's
+  recordBaseline,     // required except for smart-overwrite: also write a baseline for smart-overwrite
   labels,             // { local, upstream }: review tab labels
   baselineHtml,       // smart-overwrite: the page as of the last copy, to show what each conflict was
   normalizeImages,    // optional connector hook (sourceDoc, targetDoc)
@@ -60,12 +61,14 @@ if (html) await save(path, html);
 
 | Behavior | Result |
 |---|---|
-| `create-only` | Writes the source when the target is missing or empty. Otherwise `skipped`. |
+| `create-only` | Writes the source when the target is missing. Otherwise `skipped`, even when the target is empty. |
 | `overwrite` | Writes the source. Local edits are lost. |
 | `merge` | Marks every difference for review (2-way). |
 | `smart-overwrite` | Compares the source and the target with the baseline (3-way). It applies changes made on one side only, and marks only conflicts. Groups that are still open stay as they are. |
 
 `report` holds `outcome` (`written`, `unchanged`, `skipped`, `needs-review`), the fallback `reason`, `counts` (`applied`, `keptLocal`, `needsReview`), the conflict `groups`, and `legacyHashes` (stored hashes matched from before canonicalizing).
+
+`merge` treats a target with an empty `main` as missing and writes the source. A `merge` or `overwrite` without `recordBaseline` removes the target's baseline.
 
 `smart-overwrite` falls back to a merge with a reason: `no-baseline` (no baseline yet), `no-sync-point` (content outside `main > div` sections), or `page-too-large` (more than `MAX_UNITS` units on one side).
 
@@ -93,7 +96,7 @@ Each conflict group has an id. Every marked unit says which side it is from.
 
 | Method | Does |
 |---|---|
-| `markInSync({ source, target, path, site, config, dryRun })` | Records the current source as the baseline of a target. Returns `sync` and the page to save. |
+| `markInSync({ source, target, path, site, config, equivalentSites, dryRun })` | Records the current source as the baseline of a target. Returns `sync` and the page to save. |
 | `diffSummary(html)` | Groups and counts from a page's markup, without the editor |
 | `parse(html)` | Parses a full HTML document or a body-only DA page |
 
