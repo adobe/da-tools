@@ -41,7 +41,7 @@ export default class DaMerge {
       throw new TypeError('DaMerge requires DOMParser, Node, document, and canonicalize');
     }
     this.parser = new DOMParser();
-    const regional = createRegionalDiff({ Node, document });
+    const regional = createRegionalDiff({ document });
     const smart = createSmartOverwrite({ Node, regional });
     const parse = (html) => this.parse(html);
     Object.assign(this, regional, smart, createApplyCopy({

@@ -14,6 +14,9 @@ export const ADDED_TAG = 'da-diff-added';
 export const DELETED_TAG = 'da-diff-deleted';
 export const BASE_TAG = 'da-diff-base';
 
+// List items wrap added content in a <da-diff-added> element instead of using the attribute.
+export const LOC_MARKERS = `${DELETED_TAG}, ${ADDED_TAG}, [${ADDED_TAG}], da-loc-added, da-loc-deleted, [loc-temp-dom]`;
+
 export const SIDE = { source: 'source', local: 'local' };
 export const KIND = { added: 'added', changed: 'changed', removed: 'removed' };
 

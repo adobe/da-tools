@@ -9,37 +9,27 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-import { hashContent, HASH_LENGTH } from './hashes.js';
+import { hashContent } from './hashes.js';
 import threeWayMerge from './smart-merge.js';
 import {
-  BASE_TAG, KIND, REASON, SIDE, attrString, createGroupIds, groupAttrs, markGroups, setGroupAttrs,
+  ADDED_TAG, BASE_TAG, DELETED_TAG, KIND, LOC_MARKERS, REASON, SIDE, attrString, createGroupIds,
+  groupAttrs, markGroups, setGroupAttrs,
 } from './markup.js';
+import {
+  dropDiffAttrs, getEquivalentSites, groupBlocks, hashBlock, isNotEmptyParagraphEl, normalizeLinks,
+  sectionBlock, shortHash,
+} from './block-hash.js';
+
+export { LOC_MARKERS } from './markup.js';
 
 const MIN_LIST_ITEMS_IN_COMMON = 2;
 const ADDED = 'added';
-const ADDED_TAG = 'da-diff-added';
 const DELETED = 'deleted';
-const DELETED_TAG = 'da-diff-deleted';
 // Matches what the editor saves, so a preview before the page is opened leaves upstream blocks out.
 const DELETED_OPEN = `<${DELETED_TAG} data-mdast="ignore">`;
 const SAME = 'same';
 
-const HLX_AEM_URL_REGEX = /\.hlx\.page\/|\.hlx\.live\/|\.aem\.page\//g;
-
-const sectionBlock = {
-  isSection: true,
-  outerHTML: 'spoofedSectionHtml',
-};
-
 const isList = (block) => ['OL', 'UL'].includes(block.nodeName);
-
-const findConfigValue = (json, key) => {
-  const foundRow = json?.config?.data.find((row) => row.key === key);
-  return foundRow?.value;
-};
-
-// List items wrap added content in a <da-diff-added> element instead of using the attribute.
-export const LOC_MARKERS = `${DELETED_TAG}, ${ADDED_TAG}, [${ADDED_TAG}], da-loc-added, da-loc-deleted, [loc-temp-dom]`;
 
 export const isSnapshotPath = (path) => path.includes('/.snapshots/');
 
@@ -67,100 +57,7 @@ export const removeLocTags = (html) => {
     .forEach(({ name }) => el.removeAttribute(name)));
 };
 
-export default function createRegionalDiff({ Node, document }) {
-  /**
-   * Recursively trims whitespace in all text nodes of a DOM element.
-   * @param {Node} node
-   */
-  function trimTextNodes(node) {
-    if (node.nodeType === Node.TEXT_NODE) {
-      node.textContent = node.textContent.trim();
-    } else if (node.nodeType === Node.ELEMENT_NODE) {
-      node.childNodes.forEach(trimTextNodes);
-    }
-  }
-
-  /**
-   * Recursively serializes an element and its children,
-   * sorting all attributes alphabetically for every element.
-   * Escapes attribute values and text nodes for HTML safety.
-   * Handles element, text, and comment nodes.
-   * @param {Element} element - The DOM element to serialize.
-   * @returns {string} - The HTML string with sorted attributes for all elements.
-   */
-  function getOuterHTMLWithSortedAttributes(element) {
-    function escapeHTML(str) {
-      return str.replace(/&/g, '&amp;')
-        .replace(/"/g, '&quot;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;');
-    }
-
-    const tagName = element.tagName.toLowerCase();
-    const attrs = Array.from(element.attributes)
-      .sort((a, b) => a.name.localeCompare(b.name))
-      .map((attr) => `${attr.name}="${escapeHTML(attr.value)}"`)
-      .join(' ');
-    const voidElements = new Set([
-      'area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input',
-      'link', 'meta', 'param', 'source', 'track', 'wbr',
-    ]);
-    if (voidElements.has(tagName)) {
-      return `<${tagName}${attrs ? ` ${attrs}` : ''}>`;
-    }
-    let inner = '';
-    for (const child of element.childNodes) {
-      if (child.nodeType === Node.ELEMENT_NODE) {
-        inner += getOuterHTMLWithSortedAttributes(child);
-      } else if (child.nodeType === Node.TEXT_NODE) {
-        inner += escapeHTML(child.textContent);
-      } else if (child.nodeType === Node.COMMENT_NODE) {
-        // Sanitize comment content to avoid '-->'
-        inner += `<!--${child.textContent.replace(/-->/g, '--&gt;')}-->`;
-      }
-    }
-    return `<${tagName}${attrs ? ` ${attrs}` : ''}>${inner}</${tagName}>`;
-  }
-
-  /**
-   * Normalizes HTML by trimming whitespace in text nodes and removing whitespace between tags.
-   * @param {Element} element - DOM element to normalize
-   * @returns {string} - Normalized HTML string
-   */
-  function normalizeHTMLFromElement(element) {
-    if (element.outerHTML === 'spoofedSectionHtml') {
-      return element.outerHTML;
-    }
-    // Clone to avoid mutating the original
-    const clone = element.cloneNode(true);
-    trimTextNodes(clone);
-    // Remove whitespace between tags
-    let html = getOuterHTMLWithSortedAttributes(clone).replace(/>\s+</g, '><');
-    // Remove all line breaks and tabs
-    html = html.replace(/[\n\r\t]/g, '');
-    // Optionally, collapse multiple spaces
-    html = html.replace(/\s{2,}/g, ' ');
-    return html.trim();
-  }
-
-  async function normalizeLinks(doc, site, equivalentSites) {
-    // convert all urls with .hlx.page, .hlx.live, .aem.page, .aem.live to .aem.live
-    const links = doc.querySelectorAll('a[href*=".hlx.page/"], a[href*=".hlx.live/"], a[href*=".aem.page/"], a[href*=".aem.live/"], source[srcset*=".hlx.page/"], source[srcset*=".hlx.live/"], source[srcset*=".aem.page/"], source[srcset*=".aem.live/"], img[src*=".hlx.page/"], img[src*=".hlx.live/"], img[src*=".aem.page/"], img[src*=".aem.live/"]');
-    const tagToAttr = { A: 'href', IMG: 'src', SOURCE: 'srcset' };
-    links.forEach((el) => {
-      const urlAttr = tagToAttr[el.tagName];
-      if (!urlAttr) return;
-      let url = el[urlAttr];
-      url = url.replace(HLX_AEM_URL_REGEX, '.aem.live/');
-      const linkSite = url.split('--')[1];
-      if (equivalentSites.has(linkSite)) {
-        url = url.replace(`--${linkSite}--`, `--${site}--`);
-      }
-      el[urlAttr] = url;
-    });
-    return doc;
-  }
-
+export default function createRegionalDiff({ document }) {
   function getLists(result) {
     const addedLists = [];
     const deletedLists = [];
@@ -325,36 +222,6 @@ export default function createRegionalDiff({ Node, document }) {
     return result;
   }
 
-  function groupBlocks(blocks) {
-    const { groupedBlocks, currentGroup } = blocks.reduce((acc, block) => {
-      if (block.className?.toLowerCase().startsWith('block-group-start')) {
-        acc.isGrouping = true;
-        acc.currentGroup.push(block);
-      } else if (block.className?.toLowerCase().startsWith('block-group-end')) {
-        acc.currentGroup.push(block);
-        acc.groupedBlocks.push(acc.currentGroup);
-        acc.currentGroup = [];
-        acc.isGrouping = false;
-      } else if (acc.isGrouping) {
-        acc.currentGroup.push(block);
-      } else {
-        acc.groupedBlocks.push(block);
-      }
-      return acc;
-    }, { groupedBlocks: [], currentGroup: [], isGrouping: false });
-
-    if (currentGroup.length > 0) {
-      groupedBlocks.push(currentGroup);
-    }
-
-    return groupedBlocks;
-  }
-
-  const isNotEmptyParagraphEl = (el) => !(el.nodeName === 'P' && !el.childNodes.length && el.textContent === '');
-
-  const preText = (el) => (el.matches?.('pre') ? [el] : [...(el.querySelectorAll?.('pre') || [])])
-    .map((pre) => pre.textContent).join('\u0000');
-
   const isOpenMarkup = (block) => {
     const first = Array.isArray(block) ? block[0] : block;
     if (!first || first.isSection) return false;
@@ -399,20 +266,6 @@ export default function createRegionalDiff({ Node, document }) {
     }, []);
     const grouped = groupBlocks(blocks);
     return smart ? fixOpenGroups(grouped) : grouped;
-  }
-
-  function hashBlock(block, { smart = false } = {}) {
-    const toHashString = (el) => {
-      const normalized = normalizeHTMLFromElement(el);
-      if (!smart) return normalized;
-      if (el.isSection) return `${normalized}${el.openTag}`;
-      const pre = preText(el);
-      return pre ? `${normalized}${pre}` : normalized;
-    };
-    const stringToHash = Array.isArray(block)
-      ? block.map(toHashString).join('')
-      : toHashString(block);
-    return hashContent(stringToHash);
   }
 
   const countSectionBreaks = (blocks) => blocks.filter((block) => block.isSection).length;
@@ -515,7 +368,7 @@ export default function createRegionalDiff({ Node, document }) {
     for (let i = 0; i < diff.length; i += 1) {
       const item = diff[i];
       let modifiedBlock = item.block;
-      const hash = item.hash.substring(0, HASH_LENGTH);
+      const hash = shortHash(item.hash);
 
       if (item.block.isSection) {
         htmlText += SECTION_DIV_BREAK;
@@ -591,12 +444,7 @@ export default function createRegionalDiff({ Node, document }) {
     return modified;
   }
 
-  const getEquivalentSites = (config) => {
-    const hostnames = findConfigValue(config, 'source.fragment.hostnames')?.split?.(',') || [];
-    return new Set([...hostnames.map((hostname) => hostname.split('--')[1]), ...(config?.equivalentSites || [])]);
-  };
-
-  const shortHash = (item) => item.hash.substring(0, HASH_LENGTH);
+  const itemHash = (item) => shortHash(item.hash);
 
   // Like merge, rejections only apply to single upstream blocks (never to groups or list items).
   const isSingleBlock = (block) => !block.isSection && !Array.isArray(block);
@@ -606,14 +454,10 @@ export default function createRegionalDiff({ Node, document }) {
     const wrapper = document.createElement('div');
     wrapper.innerHTML = `<main><div>${unit.map((el) => el.outerHTML).join('')}</div></main>`;
     removeLocTags(wrapper);
-    return getSmartBlockMap(wrapper).filter(({ block }) => !block.isSection).map(shortHash);
+    return getSmartBlockMap(wrapper).filter(({ block }) => !block.isSection).map(itemHash);
   }
 
-  const smartHash = (el) => shortHash({ hash: hashBlock(el, { smart: true }) });
-
-  const dropDiffAttrs = (el) => [...el.attributes]
-    .filter(({ name }) => name === ADDED_TAG || name.startsWith('data-diff-'))
-    .forEach(({ name }) => el.removeAttribute(name));
+  const smartHash = (el) => shortHash(hashBlock(el, { smart: true }));
 
   // An open list item: <li><da-diff-added>, <li da-diff-added>, <li><da-diff-deleted>, or
   // <da-diff-deleted><li>. Returns the item without its markers, and which side it is from.
@@ -688,11 +532,11 @@ export default function createRegionalDiff({ Node, document }) {
     const hashed = getSmartBlockMap(normalized);
     return getBlocks(doc, options).map((block, idx) => ({
       block,
-      hash: shortHash(hashed[idx]),
+      hash: itemHash(hashed[idx]),
       list: getListUnits(block, hashed[idx].block),
       ...(block.fixed ? { local: localHashes(hashed[idx].block) } : {}),
       ...(withReviewHash && isSingleBlock(block)
-        ? { reviewHash: shortHash({ hash: hashBlock(hashed[idx].block) }) } : {}),
+        ? { reviewHash: shortHash(hashBlock(hashed[idx].block)) } : {}),
     }));
   }
 
@@ -905,7 +749,7 @@ export default function createRegionalDiff({ Node, document }) {
   }
 
   return {
-    normalizeLinks,
+    normalizeLinks: async (...args) => normalizeLinks(...args),
     removeRejectedBlocks,
     getBlockHashes,
     getContentHashes,
