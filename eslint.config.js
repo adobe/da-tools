@@ -18,6 +18,7 @@ export default defineConfig([
     'coverage',
     'dist/*',
     'da-merge/src/object_hash.js',
+    'da-merge/test/mocks/da-parser-v2/*',
   ]),
   {
     languageOptions: {

@@ -12,6 +12,7 @@
 import createRegionalDiff from './regional-diff.js';
 import createSmartOverwrite from './smart-overwrite.js';
 import createApplyCopy from './apply-copy.js';
+import createResolve from './resolve.js';
 import { diffSummary } from './markup.js';
 
 export {
@@ -27,6 +28,11 @@ export {
 } from './apply-copy.js';
 export { REASON } from './markup.js';
 export {
+  CHOICE, HASHES_META, groups, findGroup, recordHashes,
+} from './resolve.js';
+export { default as daParserAdapter } from './da-parser-adapter.js';
+export { reviewHash } from './block-hash.js';
+export {
   HASH_LENGTH, ACCEPTED_KEY, REJECTED_KEY, ROLLOUT_BASE_KEY, ROLLOUT_ORDER_KEY,
   hashContent, getDiffHash,
 } from './hashes.js';
@@ -35,18 +41,24 @@ export { default as getElementMetadata } from './metadata.js';
 
 export default class DaMerge {
   constructor({
-    DOMParser, Node, document, canonicalize,
+    DOMParser, Node, document, canonicalize, aem2doc, doc2aem,
   } = {}) {
-    if (!DOMParser || !Node || !document || typeof canonicalize !== 'function') {
-      throw new TypeError('DaMerge requires DOMParser, Node, document, and canonicalize');
+    const parsing = typeof aem2doc === 'function' && typeof doc2aem === 'function';
+    const toCanonical = canonicalize ?? (parsing && ((html) => {
+      const { state, metadata } = aem2doc(html);
+      return doc2aem(state.doc, metadata);
+    }));
+    if (!DOMParser || !Node || !document || typeof toCanonical !== 'function') {
+      throw new TypeError('DaMerge requires DOMParser, Node, document, and canonicalize (or aem2doc and doc2aem)');
     }
     this.parser = new DOMParser();
     const regional = createRegionalDiff({ document });
     const smart = createSmartOverwrite({ Node, regional });
     const parse = (html) => this.parse(html);
     Object.assign(this, regional, smart, createApplyCopy({
-      parse, canonicalize, regional, smart,
+      parse, canonicalize: toCanonical, regional, smart,
     }));
+    if (parsing) Object.assign(this, createResolve({ DOMParser, aem2doc, doc2aem }));
   }
 
   parse(html) {

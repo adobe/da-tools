@@ -39,6 +39,22 @@ const workerMerge = new DaMerge({
 });
 ```
 
+To also resolve reviews, pass `aem2doc(html) → { state, metadata }` and `doc2aem(doc, metadata) → html` instead of `canonicalize`. `daParserAdapter` builds all three from da-parser, so every caller wires it the same way. Without `canonicalize`, the engine canonicalizes with `doc2aem(aem2doc(html))`.
+
+```javascript
+import * as Y from 'yjs';
+import { EditorState } from 'prosemirror-state';
+import {
+  aem2doc, doc2aem, getSchema, yDocToProsemirror, prosemirrorToYXmlFragment,
+} from '@adobe/da-parser';
+import DaMerge, { daParserAdapter } from '@adobe/da-merge';
+
+const parser = daParserAdapter({
+  Y, EditorState, aem2doc, doc2aem, getSchema, yDocToProsemirror, prosemirrorToYXmlFragment,
+});
+const merge = new DaMerge({ DOMParser, Node, document, ...parser });
+```
+
 ## Copy a page
 
 ```javascript
@@ -99,6 +115,68 @@ Each conflict group has an id. Every marked unit says which side it is from.
 
 `<da-diff-base>` is written only when `baselineHtml` is given. The editors must run a `@adobe/da-parser` that keeps this markup, or their first save drops it.
 
+## Resolve a review
+
+Resolving turns a choice into a ProseMirror transaction, and records the review hashes that the next copy reads. It needs a da-parser schema with diff markup v2 (`diff_added`, `diff_deleted`, `diff_base` with `diffGroup` attributes). It throws a `TypeError` on a schema without them.
+
+```javascript
+import {
+  createResolve, daParserAdapter, CHOICE, groups, findGroup, recordHashes, HASHES_META,
+} from '@adobe/da-merge/resolve';
+
+const parser = daParserAdapter({ Y, EditorState, aem2doc, doc2aem, getSchema, yDocToProsemirror, prosemirrorToYXmlFragment });
+const engine = createResolve({ DOMParser, ...parser });
+
+const metadata = ydoc.getMap('daMetadata');
+const tr = engine.resolve({
+  state: view.state, groupId: 'g1', choice: CHOICE.mine,
+  metadata, transact: (fn) => ydoc.transact(fn, ySyncPluginKey), site, config,
+});
+if (tr) view.dispatch(tr);
+```
+
+`@adobe/da-merge/resolve` holds only the resolve code, the markup constants, and the hash functions. It does not bundle da-parser. A `DaMerge` created with `aem2doc` and `doc2aem` has the same methods.
+
+| Method | Does |
+|---|---|
+| `resolve({ state, groupId, choice, metadata, transact, site, config })` | Resolves every marker and base of one group. Returns the transaction, or `null` when the group isn't there. |
+| `resolveAll({ state, choice, … })` | Resolves every marker, grouped or not, and every base. |
+| `resolveMarkers({ state, positions, choice, … })` | Resolves the markers at `positions`: a legacy single marker or pair. A group's base goes when its last marker goes. |
+| `resolveHtml(html, groupId, choice, { site, config })` | `resolve` on a page: returns the page to save, with its hashes in the metadata, or `null`. |
+| `resolveAllHtml(html, choice, { site, config })` | `resolveAll` on a page. |
+| `reviewSummary(doc)` | `diffSummary` of a document |
+| `groups(doc)`, `findGroup(doc, id)` | `{ id, markers: [{ node, pos, side }], bases: [{ node, pos }] }` |
+| `recordHashes(metadata, { accepted, rejected }, { transact })` | Adds hashes to the review keys. |
+
+| `choice` | Source side | Local side |
+|---|---|---|
+| `source` | kept | dropped |
+| `mine` | dropped | kept |
+| `both` | kept | kept |
+| `neither` | dropped | dropped |
+
+`state` needs only `doc`, `schema`, and `tr`: an `EditorState`, or `{ doc, schema, tr: new Transform(doc) }`.
+
+- **Keep:** the marker is replaced by its content, with `da-diff-added` removed from every node in it, linked images included. An empty marker is deleted.
+- **Drop:** the marker is deleted. When it is the only child of a list item, the list item is deleted too, and a list left empty is deleted. A list item with other content stays.
+- **Bases:** a group's `da-diff-base` is deleted once the group has no markers left.
+
+### Review hashes
+
+Each kept unit is added to `acceptedHashes`, and each dropped unit to `rejectedHashes`. A unit is a block, a list item (for a marker in a list), or a whole block group. The hash is what the next copy reads: the unit as `doc2aem` saves it, with links normalized for `site` and `config` and diff attributes removed (`reviewHash`).
+
+`metadata` is Map-like: `get`, `set`, and `keys` or `forEach`, for example a `Y.Map`. Keys are matched without regard to case, and hashes are added to the existing key without duplicates. `transact(fn)` runs the writes, so a Yjs undo manager can fold them into the same undo step as the transaction. Add the metadata map to the undo manager's scope, and dispatch the transaction right away. Without `metadata`, the hashes are only on the transaction: `tr.getMeta(HASHES_META)` is `{ accepted, rejected }`, ready for `recordHashes` after the dispatch.
+
+The next copy honors the hashes:
+
+| Unit | `merge` | `smart-overwrite` |
+|---|---|---|
+| Block | A rejected source block is left out. An accepted block is not marked. | A rejected source block is left out, unless the baseline holds it. |
+| List item | Same, for items of two lists merged item by item. | Same, when a list with open items is merged item by item, and on an emptied page. |
+| Block group | Same, for the whole group. | Same, for the whole group. |
+
+Rejected hashes never remove the page's own units.
+
 ## Other methods
 
 | Method | Does |
@@ -145,3 +223,5 @@ npm test
 ```
 
 The same tests run in Chrome and in Node.js with linkedom.
+
+The resolve tests need diff markup v2 in da-parser ([adobe/da-tools#48](https://github.com/adobe/da-tools/pull/48)). Until it is released, they use a copy of its parser in `test/mocks/da-parser-v2` (`f10d615`).
