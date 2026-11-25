@@ -17,7 +17,7 @@ import {
 } from './markup.js';
 import {
   dropDiffAttrs, getEquivalentSites, groupBlocks, hashBlock, isNotEmptyParagraphEl, normalizeLinks,
-  sectionBlock, shortHash,
+  reviewHash, sectionBlock, shortHash,
 } from './block-hash.js';
 
 export { LOC_MARKERS } from './markup.js';
@@ -28,6 +28,10 @@ const DELETED = 'deleted';
 // Matches what the editor saves, so a preview before the page is opened leaves upstream blocks out.
 const DELETED_OPEN = `<${DELETED_TAG} data-mdast="ignore">`;
 const SAME = 'same';
+const NO_DECISIONS = { accepted: [], rejected: [] };
+
+const isRejectedBlock = (rejected) => (entry) => !!entry.reviewHash
+  && rejected.includes(entry.reviewHash);
 
 const isList = (block) => ['OL', 'UL'].includes(block.nodeName);
 
@@ -98,18 +102,27 @@ export default function createRegionalDiff({ document }) {
     targetElement.appendChild(wrapperElement);
   }
 
-  const convertToHtmlList = (mergedList) => mergedList
+  const decide = ({ accepted, rejected }) => (block) => {
+    if (!accepted.length && !rejected.length) return null;
+    const hash = reviewHash(block);
+    if (accepted.includes(hash)) return 'accepted';
+    return rejected.includes(hash) ? 'rejected' : null;
+  };
+
+  const convertToHtmlList = (mergedList, decisions) => mergedList
     .map((item) => {
-      if (item.type === ADDED) {
+      const decision = item.type === SAME ? null : decide(decisions)(item.block);
+      if (item.type === DELETED && decision === 'rejected') return '';
+      if (item.type === ADDED && decision !== 'accepted') {
         // LI's have the inner content wrapped, unlike other els that are wrapped outside
         wrapContentWithElement(item.block, ADDED_TAG);
-      } else if (item.type === DELETED) {
+      } else if (item.type === DELETED && decision !== 'accepted') {
         wrapContentWithElement(item.block, DELETED_TAG);
       }
       return item.block.outerHTML;
     }).join('');
 
-  function checkLists(res) {
+  function checkLists(res, decisions) {
     let result = res;
     const [addedLists, deletedLists] = getLists(result);
     // see if any of the added lists children match with any deleted list children
@@ -133,7 +146,7 @@ export default function createRegionalDiff({ document }) {
 
           // eslint-disable-next-line no-use-before-define
           const mergedList = blockDiff(deletedListItems, addedListItems, { isListCheck: true });
-          addedList.block.innerHTML = convertToHtmlList(mergedList);
+          addedList.block.innerHTML = convertToHtmlList(mergedList, decisions);
           addedList.type = SAME;
         }
       });
@@ -190,7 +203,7 @@ export default function createRegionalDiff({ document }) {
     return result;
   }
 
-  function blockDiff(A, B, { isListCheck = false } = {}) {
+  function blockDiff(A, B, { isListCheck = false, decisions = NO_DECISIONS } = {}) {
     let result = [];
     const length = Math.min(A.length, B.length);
     let i = 0;
@@ -216,7 +229,7 @@ export default function createRegionalDiff({ document }) {
     }
 
     if (!isListCheck) {
-      result = checkLists(result);
+      result = checkLists(result, decisions);
     }
 
     return result;
@@ -289,7 +302,7 @@ export default function createRegionalDiff({ document }) {
     return getBlocks(dom, options).map((block) => ({ block, hash: hashBlock(block, options) }));
   }
 
-  function htmldiff(originalDOM, modifiedDOM) {
+  function htmldiff(originalDOM, modifiedDOM, decisions) {
     const originalBlocks = getBlocks(originalDOM, { keepAllBreaks: true });
     const modifiedBlocks = getBlocks(modifiedDOM, { keepAllBreaks: true });
     const alignSections = countSectionBreaks(originalBlocks) === countSectionBreaks(modifiedBlocks);
@@ -298,6 +311,7 @@ export default function createRegionalDiff({ document }) {
     const diffArr = blockDiff(
       getBlockMap(original, alignSections),
       getBlockMap(modified, alignSections),
+      { decisions },
     );
     return diffArr;
   }
@@ -363,7 +377,17 @@ export default function createRegionalDiff({ document }) {
     return `${htmlText}${inner}`;
   }
 
-  function buildHtmlFromDiff(diff, modified, acceptedHashes, rejectedHashes, markup) {
+  // A block group the author accepted is kept as it is; one they rejected stays out.
+  const withGroupDecisions = (diff, decisions) => diff.flatMap((item) => {
+    if (!Array.isArray(item.block) || item.type === SAME) return [item];
+    const decision = decide(decisions)(item.block);
+    if (decision === 'rejected' && item.type === DELETED) return [];
+    return decision === 'accepted' ? [{ ...item, type: SAME }] : [item];
+  });
+
+  function buildHtmlFromDiff(blockDiffs, modified, acceptedHashes, rejectedHashes, markup) {
+    const decisions = { accepted: acceptedHashes, rejected: rejectedHashes };
+    const diff = withGroupDecisions(blockDiffs, decisions);
     let htmlText = '<div>';
     for (let i = 0; i < diff.length; i += 1) {
       const item = diff[i];
@@ -446,8 +470,8 @@ export default function createRegionalDiff({ document }) {
 
   const itemHash = (item) => shortHash(item.hash);
 
-  // Like merge, rejections only apply to single upstream blocks (never to groups or list items).
-  const isSingleBlock = (block) => !block.isSection && !Array.isArray(block);
+  // Blocks and block groups; list items are reviewed inside their list.
+  const isReviewUnit = (block) => !block.isSection && !block.fixed;
 
   function localHashes(unit) {
     if (unit.some((el) => el.isSection)) return null;
@@ -493,6 +517,7 @@ export default function createRegionalDiff({ document }) {
         block: list.children[idx],
         hash: side === SAME ? smartHash(clean) : smartHash(children[idx]),
         open: side !== SAME,
+        ...(side === SAME ? { reviewHash: reviewHash(clean) } : {}),
       })),
     };
   }
@@ -504,13 +529,15 @@ export default function createRegionalDiff({ document }) {
   }
 
   // Merges a list item by item when its open review is the only local change to it.
-  function mergeList({ dest, source }) {
+  function mergeList({ dest, source, rejected = [] }) {
     const sameTag = dest.block[0].nodeName === source.block.nodeName;
     if (!sameTag || !source.list || source.list.items.some(({ open }) => open)) return null;
     const result = threeWayMerge({
       base: dest.list.baseItems,
       source: source.list.items,
       dest: dest.list.items,
+      rejected: new Set(source.list.items.filter(isRejectedBlock(rejected))
+        .map((item) => item.hash)),
       fixed: new Set(dest.list.items.filter(({ open }) => open).map(({ hash }) => hash)),
     });
     if (result.review || result.blocks.some(({ mark }) => mark)) return null;
@@ -525,7 +552,7 @@ export default function createRegionalDiff({ document }) {
     };
   }
 
-  // Hashes (and merge's reviewHash, single blocks only) come from a link-normalized copy.
+  // Hashes (and merge's reviewHash) come from a link-normalized copy.
   async function getHashedBlocks(doc, { site, config, withReviewHash = false }) {
     const options = { smart: true };
     const normalized = await normalizeLinks(doc.cloneNode(true), site, getEquivalentSites(config));
@@ -535,13 +562,18 @@ export default function createRegionalDiff({ document }) {
       hash: itemHash(hashed[idx]),
       list: getListUnits(block, hashed[idx].block),
       ...(block.fixed ? { local: localHashes(hashed[idx].block) } : {}),
-      ...(withReviewHash && isSingleBlock(block)
-        ? { reviewHash: shortHash(hashBlock(hashed[idx].block)) } : {}),
+      ...(withReviewHash && isReviewUnit(block)
+        ? { reviewHash: reviewHash(hashed[idx].block) } : {}),
     }));
   }
 
-  const isRejectedBlock = (rejected) => ({ reviewHash }) => !!reviewHash
-    && rejected.includes(reviewHash);
+  function removeFromSection(el) {
+    const section = el.parentElement;
+    el.remove();
+    const emptied = section && !section.children.length && !section.textContent.trim();
+    // The last section stays: a saved empty page still has one.
+    if (emptied && section.parentElement.children.length > 1) section.remove();
+  }
 
   async function removeRejectedBlocks({
     doc, rejected = [], site, config,
@@ -549,12 +581,16 @@ export default function createRegionalDiff({ document }) {
     const copy = doc.cloneNode(true);
     if (!rejected.length) return copy;
     const blocks = await getHashedBlocks(copy, { site, config, withReviewHash: true });
-    blocks.filter(isRejectedBlock(rejected)).forEach(({ block }) => {
-      const section = block.parentElement;
-      block.remove();
-      const emptied = section && !section.children.length && !section.textContent.trim();
-      // The last section stays: a saved empty page still has one.
-      if (emptied && section.parentElement.children.length > 1) section.remove();
+    blocks.forEach((entry) => {
+      const { block } = entry;
+      if (isRejectedBlock(rejected)(entry)) {
+        [block].flat().filter((el) => !el.isSection).forEach(removeFromSection);
+        return;
+      }
+      if (block.isSection || Array.isArray(block) || !isList(block)) return;
+      [...block.children].filter((li) => rejected.includes(reviewHash(li, { site, config })))
+        .forEach((li) => li.remove());
+      if (!block.children.length) removeFromSection(block);
     });
     return copy;
   }
@@ -571,7 +607,7 @@ export default function createRegionalDiff({ document }) {
 
   async function getReviewHashes({ doc, site, config }) {
     const blocks = await getHashedBlocks(doc, { site, config, withReviewHash: true });
-    return blocks.map(({ reviewHash }) => reviewHash ?? null);
+    return blocks.map((entry) => entry.reviewHash ?? null);
   }
 
   const partHtml = (part) => (Array.isArray(part) ? getGroupInnerHtml(part) : part.outerHTML);
@@ -706,7 +742,7 @@ export default function createRegionalDiff({ document }) {
       dest: destBlocks,
       rejected: new Set(rejectedBlocks.map(({ hash }) => hash)),
       fixed: new Set(destBlocks.filter(({ block }) => block.fixed).map(({ hash }) => hash)),
-      mergeList,
+      mergeList: (lists) => mergeList({ ...lists, rejected }),
     });
     return {
       html: buildHtmlFromBlocks(blocks, {
@@ -737,12 +773,13 @@ export default function createRegionalDiff({ document }) {
     const normalizedModified = await normalizeLinks(modified, site, equivalentSites);
     // optional connector hook
     if (normalizeImages) normalizeImages(normalizedOriginal, normalizedModified);
-    const diff = htmldiff(normalizedOriginal, normalizedModified);
+    const decisions = { accepted: acceptedHashes || [], rejected: rejectedHashes || [] };
+    const diff = htmldiff(normalizedOriginal, normalizedModified, decisions);
     const output = buildHtmlFromDiff(
       diff,
       normalizedModified,
-      acceptedHashes || [],
-      rejectedHashes || [],
+      decisions.accepted,
+      decisions.rejected,
       { reason, nextId: createGroupIds(normalizedModified) },
     );
     return output.body.querySelector('main');
