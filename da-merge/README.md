@@ -122,13 +122,15 @@ A conflict is a place where the source and the page both changed since the basel
 | The source removed one of two identical units, and the page edited one | As a deletion: the page's unit is marked, the twin stays. |
 | The source's change spans units the page didn't touch (`A B C` → `A2 Y B C` / `L B C`) | One group with both sides. The source side holds only units new to the page: units from the baseline that the page deleted stay deleted (`\| H A B` → `\| H A Y B` / `\| H` offers only `Y`, kind `added`). |
 | The source added units to a section the page removed | The new units as a source-only group, kind `added`, at the end of the section before it. |
-| The source deleted a section the page edited (`\| A \| B C` → `\| A` / `\| A \| Bl C`) | The page's units in that section as a local-only group, kind `removed`. |
+| The source deleted a section the page edited (`\| A \| B C` → `\| A` / `\| A \| Bl C`) | The page's units in that section as a local-only group, kind `removed`. One group per section. |
+| The page added a section break between units it edited, and the source edited them too (`A B C` → `A Bs Cs` / `A Bl \| Cl`) | One group per section, each unit with its own source side and base (`Bs` / `Bl`, `Cs` / `Cl`). |
+| The same, but the source's units can't be split at the page's section break (`A B C` → `A X` / `A Bl \| Cl`) | The page's version, no markers. Counts in `report.skipped`. |
 | A conflict where the source's change adds or removes a section break | The page's version, no markers. Counts in `report.skipped`. |
 | Both inserted at one spot, and one insert holds a section break | The page's version, no markers. Counts in `report.skipped`. |
 | New source units would land before the page's first section | The page's version, no markers. Counts in `report.skipped`. |
 
 - Every group has reason `both-changed`.
-- Markers stay inside the page's existing `main > div` sections. Section breaks are never marked.
+- Markers stay inside the page's existing `main > div` sections. Section breaks are never marked. A group never spans a section break.
 - A conflict that touches an open group keeps the page as it is there, and counts in `report.skipped`.
 - Each source change is offered once: the next baseline holds it.
 

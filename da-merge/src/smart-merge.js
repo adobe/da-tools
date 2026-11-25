@@ -73,6 +73,28 @@ function splitInPlace(hunk) {
   }));
 }
 
+function splitAtAddedBreaks(hunk, base) {
+  const { start, end, blocks } = hunk;
+  const breaks = new Set(toHashes(blocks.filter(isSection)));
+  const content = blocks.filter((block) => !isSection(block));
+  if (!breaks.size || !content.length || content.length !== end - start
+    || base.slice(start, end).some((hash) => breaks.has(hash))) return [hunk];
+  const split = [];
+  let pos = start;
+  blocks.forEach((block) => {
+    const last = split[split.length - 1];
+    if (!isSection(block)) {
+      split.push({ ...hunk, start: pos, end: pos + 1, blocks: [block] });
+      pos += 1;
+    } else if (last?.start === pos && last.end === pos) {
+      last.blocks.push(block);
+    } else {
+      split.push({ ...hunk, start: pos, end: pos, blocks: [block] });
+    }
+  });
+  return split;
+}
+
 function alignDeletedSections({ base, blocks, matches }) {
   const aligned = new Map(matches);
   let prev = -1;
@@ -356,6 +378,28 @@ const withMark = (blocks, mark) => blocks.map((entry) => ({ ...entry, mark }));
 
 const indexesOf = ({ start, end }) => Array.from({ length: end - start }, (_, idx) => start + idx);
 
+const spansSections = (blocks) => blocks
+  .slice(blocks.findIndex(({ mark }) => mark), blocks.findLastIndex(({ mark }) => mark))
+  .some(isSection);
+
+function sectionGroups({
+  blocks, cluster, group, isBaseBreak,
+}) {
+  const whole = { group, baseRange: [cluster.start, cluster.end] };
+  if (!spansSections(blocks)) return blocks.map(() => whole);
+  const breaks = indexesOf(cluster).filter(isBaseBreak);
+  const bounds = [cluster.start, ...breaks, cluster.end];
+  const aligned = breaks.length === blocks.filter(isSection).length;
+  let part = 0;
+  return blocks.map((entry) => {
+    if (isSection(entry)) part += 1;
+    return {
+      group: `${group}.${part}`,
+      baseRange: aligned ? [bounds[part], bounds[part + 1]] : [cluster.start, cluster.start],
+    };
+  });
+}
+
 const newToPage = (blocks, { inBase, onPage }) => blocks
   .filter((entry) => isSection(entry) || !inBase.has(entry.hash) || onPage.has(entry.hash));
 
@@ -418,6 +462,7 @@ function resolveConflict({ cluster, context, emitted }) {
     return unmarked;
   }
   const marked = destBlocks.map((entry) => (isSection(entry) ? entry : { ...entry, mark: 'local' }));
+  if (offered.length && spansSections([...withMark(offered, 'upstream'), ...marked])) return unmarked;
   if (offered.length) {
     return { blocks: [...withMark(offered, 'upstream'), ...marked], review: count };
   }
@@ -560,7 +605,8 @@ function mergeBlocks({
   });
   const isBreak = (idx) => [[sourceDiff.matches, merged], [destDiff.matches, dest]]
     .some(([toSide, side]) => toSide.has(idx) && isSection(side[toSide.get(idx)]));
-  const clusters = getClusters([...sourceDiff.hunks, ...destDiff.hunks]).map(classify);
+  const destHunks = destDiff.hunks.flatMap((hunk) => splitAtAddedBreaks(hunk, base));
+  const clusters = getClusters([...sourceDiff.hunks, ...destHunks]).map(classify);
   const misplaced = new Set(clusters
     .map((cluster, idx) => (idx && endsRemovedSection({
       hunk: cluster.hunks[0], cluster: clusters[idx - 1], isBreak, size: base.length,
@@ -602,11 +648,11 @@ function mergeBlocks({
     }));
     const resolved = resolve(cluster, group, blocks.length);
     const removed = resolved.removed ? { removed: true } : {};
+    const groups = sectionGroups({
+      blocks: resolved.blocks, cluster, group, isBaseBreak: context.isBaseBreak,
+    });
     const tagged = resolved.blocks
-      .map((entry) => (entry.mark
-        ? {
-          ...entry, group, baseRange: [cluster.start, cluster.end], ...removed,
-        } : entry));
+      .map((entry, idx) => (entry.mark ? { ...entry, ...groups[idx], ...removed } : entry));
     blocks.push(...tagged);
     return { pos: cluster.end, ...add(acc, resolved) };
   }, {

@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 import {
-  expect, daMerge, rawMerge, dom, withoutGroups,
+  expect, daMerge, rawMerge, dom, sortAttributes, withoutGroups,
 } from './test-utils.js';
 import DaMerge, {
   removeLocTags, formatRolloutBase, getElementMetadata, DA_METADATA_SELECTOR,
@@ -44,6 +44,16 @@ const marker = (el) => ({
 
 const markers = (html, engine = daMerge) => [...doc(`<body><main>${html}</main></body>`, engine)
   .querySelectorAll('da-diff-deleted, [da-diff-added], da-diff-added')].map(marker);
+
+const sectionsPerGroup = (html) => {
+  const sections = [...doc(`<body><main>${html}</main></body>`).querySelectorAll('main > div')];
+  const found = new Map();
+  sections.forEach((section, idx) => section.querySelectorAll('[data-diff-group]').forEach((el) => {
+    const group = el.getAttribute('data-diff-group');
+    found.set(group, new Set([...(found.get(group) || []), idx]));
+  }));
+  return [...found.values()].map((set) => set.size);
+};
 
 const openTarget = page('<div><da-diff-deleted data-mdast="ignore" data-diff-group="g1" data-diff-side="source" data-diff-kind="changed" data-diff-reason="differs"><p>A</p></da-diff-deleted><p da-diff-added="" data-diff-group="g1" data-diff-side="local" data-diff-kind="changed">A local</p></div>');
 
@@ -115,10 +125,17 @@ describe('grouped diff markup', () => {
     ]);
   });
 
-  const smartMarkers = async ({ base, source, dest }) => {
+  const smartMarkers = async ({
+    base, source, dest, withBase = false,
+  }) => {
     const hashes = await daMerge.getBlockHashes({ doc: toDoc(base), site, config });
     const result = await daMerge.smartMerge({
-      base: hashes, source: toDoc(source), dest: toDoc(dest), site, config,
+      base: hashes,
+      source: toDoc(source),
+      dest: toDoc(dest),
+      site,
+      config,
+      baselineDoc: withBase ? toDoc(base) : null,
     });
     return { ...result, found: markers(result.html) };
   };
@@ -170,14 +187,57 @@ describe('grouped diff markup', () => {
     ]);
   });
 
-  it('writes the reason once for a group that spans sections', async () => {
-    const { found } = await smartMarkers({
+  it('gives each section of a removed region its own group, reason, and base', async () => {
+    const { html, found } = await smartMarkers({
       base: '<div><p>A</p></div><div><p>B</p></div><div><p>C</p></div>',
       source: '<div><p>A</p></div>',
       dest: '<div><p>A</p></div><div><p>B local</p></div><div><p>C local</p></div>',
+      withBase: true,
     });
-    expect(new Set(found.map(({ group }) => group)).size).to.equal(1);
-    expect(found.filter(({ reason }) => reason)).to.have.length(1);
+    expect(found).to.deep.equal(['g1', 'g2'].map((group) => ({
+      group, side: 'local', kind: 'removed', reason: 'both-changed',
+    })));
+    expect(sectionsPerGroup(html)).to.deep.equal([1, 1]);
+    expect(html).to.include('<da-diff-base data-mdast="ignore" data-diff-group="g1"><p>B</p></da-diff-base>');
+    expect(html).to.include('<da-diff-base data-mdast="ignore" data-diff-group="g2"><p>C</p></da-diff-base>');
+  });
+
+  it('gives each section its own group when the page added a section break inside a conflict', async () => {
+    const { html, skipped, review } = await smartMarkers({
+      base: '<div><p>A</p><p>B</p><p>C</p></div>',
+      source: '<div><p>A</p><p>B up</p><p>C up</p></div>',
+      dest: '<div><p>A</p><p>B mine</p></div><div><p>C mine</p></div>',
+      withBase: true,
+    });
+    const group = (id, from, up, mine) => `<da-diff-base data-mdast="ignore" data-diff-group="${id}"><p>${from}</p></da-diff-base>`
+      + `<da-diff-deleted data-mdast="ignore" data-diff-group="${id}" data-diff-side="source" data-diff-kind="changed" data-diff-reason="both-changed"><p>${up}</p></da-diff-deleted>`
+      + `<p da-diff-added="" data-diff-group="${id}" data-diff-kind="changed" data-diff-side="local">${mine}</p>`;
+    expect(sortAttributes(html)).to.equal(sortAttributes(`<div><p>A</p>${group('g1', 'B', 'B up', 'B mine')}</div><div>${group('g2', 'C', 'C up', 'C mine')}</div>`));
+    expect(sectionsPerGroup(html)).to.deep.equal([1, 1]);
+    expect(skipped).to.equal(0);
+    expect(review).to.equal(true);
+  });
+
+  it('keeps a page unit next to a page-added section break unmarked when the source did not change it', async () => {
+    const { html, found } = await smartMarkers({
+      base: '<div><p>A</p><p>B</p><p>C</p></div>',
+      source: '<div><p>A</p><p>B up</p><p>C</p></div>',
+      dest: '<div><p>A</p><p>B mine</p></div><div><p>C mine</p></div>',
+    });
+    expect(found.map(({ group, side }) => `${group}:${side}`)).to.deep.equal(['g1:source', 'g1:local']);
+    expect(withoutGroups(html)).to.equal('<div><p>A</p><da-diff-deleted data-mdast="ignore"><p>B up</p></da-diff-deleted><p da-diff-added="">B mine</p></div><div><p>C mine</p></div>');
+  });
+
+  it('keeps the page and counts a skip when a conflict around a page-added section break cannot be split', async () => {
+    const dest = '<div><p>A</p><p>B mine</p></div><div><p>C mine</p></div>';
+    const { html, found, skipped } = await smartMarkers({
+      base: '<div><p>A</p><p>B</p><p>C</p></div>',
+      source: '<div><p>A</p><p>X</p></div>',
+      dest,
+    });
+    expect(found).to.deep.equal([]);
+    expect(html).to.equal(dest);
+    expect(skipped).to.equal(1);
   });
 
   it('offers only the units new to the page as a source-only group of kind added', async () => {
