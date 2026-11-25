@@ -496,6 +496,13 @@ describe('applyCopy', () => {
       expect(errors.map((e) => e?.code)).to.deep.equal(Array(3).fill('canonicalize-loss'));
     });
 
+    it('copies a plain image that canonicalizing wraps in a picture', async () => {
+      const source = page('<div><p>A</p><p><img src="https://main--site--org.aem.live/a.png" alt="A"></p></div>');
+      const result = await copy({ source, behavior: 'overwrite', recordBaseline: false });
+      expect(result.html).to.include('<picture>');
+      expect(result.report.outcome).to.equal('written');
+    });
+
     it('ignores what canonicalizing drops on purpose', async () => {
       const raw = '<body><header><p>Nav</p></header><main><div id="s1"><p>A</p><p><a id="top"></a></p></div></main><footer><p>Foot</p></footer></body>';
       const strip = (html) => html.replace(/<header>.*<\/header>/, '<header></header>')

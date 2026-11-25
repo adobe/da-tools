@@ -61,7 +61,7 @@ function dropOrphanBases(doc) {
 }
 
 export const CANONICALIZE_LOSS = 'canonicalize-loss';
-const COUNTED = ['img', 'picture', 'video', 'a[href]'];
+const COUNTED = ['img', 'video', 'a[href]'];
 
 const textOf = (el) => (el?.textContent ?? '').replace(/\s+/g, '');
 
