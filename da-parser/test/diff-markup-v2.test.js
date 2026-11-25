@@ -88,6 +88,41 @@ describe('Diff markup v2', () => {
     expect(roundTrip(first)).to.equal(first);
   });
 
+  describe('keeping added content', () => {
+    const keepAdded = (html) => {
+      const yDoc = new Y.Doc();
+      aem2doc(html, yDoc);
+      const fragment = yDoc.getXmlFragment('prosemirror');
+      const wrappers = fragment.toArray().filter((node) => node.nodeName === 'diff_added');
+      const nested = wrappers.flatMap((node) => node.toArray())
+        .flatMap((child) => [...child.createTreeWalker(() => true)])
+        .filter((node) => node.getAttribute?.('daDiffAdded') != null)
+        .map((node) => node.nodeName);
+      fragment.toArray().forEach((node, idx) => {
+        if (node.nodeName !== 'diff_added') return;
+        const kept = node.toArray().map((child) => child.clone());
+        kept.forEach((child) => child.removeAttribute('daDiffAdded'));
+        fragment.delete(idx, 1);
+        fragment.insert(idx, kept);
+      });
+      return { wrappers, nested, kept: collapseWhitespace(doc2aem(yDoc)) };
+    };
+
+    [
+      ['a linked picture', `<a href="https://new.example.com" title="New" da-diff-added="" ${LOCAL}><picture><source srcset="https://new.example.com/image.jpg"><source srcset="https://new.example.com/image.jpg" media="(min-width: 600px)"><img src="https://new.example.com/image.jpg" alt="New"></picture></a>`],
+      ['a picture', `<picture da-diff-added="" ${LOCAL}><source srcset="https://new.example.com/image.jpg"><source srcset="https://new.example.com/image.jpg" media="(min-width: 600px)"><img src="https://new.example.com/image.jpg" alt="New" loading="lazy"></picture>`],
+      ['a paragraph', `<p da-diff-added="" ${LOCAL}>Mine</p>`],
+    ].forEach(([name, body]) => {
+      it(`leaves no diff marker below the wrapper's units or after keeping ${name}`, () => {
+        const { wrappers, nested, kept } = keepAdded(page(body));
+        expect(wrappers).to.have.length(1);
+        expect(nested).to.deep.equal([]);
+        expect(kept).to.not.include('da-diff-added');
+        expect(kept).to.not.include('data-diff-');
+      });
+    });
+  });
+
   it('keeps v1 markup unchanged', () => {
     const html = page('<da-diff-deleted data-mdast="ignore"><p>Source</p></da-diff-deleted><p da-diff-added="">Mine</p>');
     expect(roundTrip(html)).to.equal(html);

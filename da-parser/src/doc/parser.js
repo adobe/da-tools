@@ -280,12 +280,13 @@ function convertLocTags(html) {
   return html;
 }
 
-const createWrapper = (children, source = children[0]) => ({
-  type: 'element',
-  tagName: 'da-diff-added',
-  properties: copyDiffProps(source?.properties, {}),
-  children,
-});
+const createWrapper = (children, source = children[0]) => {
+  const properties = copyDiffProps(source?.properties, {});
+  children.forEach((child) => delete child.properties?.['da-diff-added']);
+  return {
+    type: 'element', tagName: 'da-diff-added', properties, children,
+  };
+};
 
 const hasDaDiffAdded = (child) => child.type === 'element' && child.properties?.['da-diff-added'] !== undefined;
 
