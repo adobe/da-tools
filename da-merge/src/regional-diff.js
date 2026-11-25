@@ -62,10 +62,9 @@ export const removeLocTags = (html) => {
     parent.removeChild(el);
   });
 
-  const addedEls = html.querySelectorAll(`[${ADDED_TAG}]`);
-  addedEls.forEach((el) => {
-    el.removeAttribute(ADDED_TAG);
-  });
+  html.querySelectorAll('*').forEach((el) => [...el.attributes]
+    .filter(({ name }) => name === ADDED_TAG || name.startsWith('data-diff-'))
+    .forEach(({ name }) => el.removeAttribute(name)));
 };
 
 export default function createRegionalDiff({ Node, document }) {
@@ -607,9 +606,6 @@ export default function createRegionalDiff({ Node, document }) {
     const wrapper = document.createElement('div');
     wrapper.innerHTML = `<main><div>${unit.map((el) => el.outerHTML).join('')}</div></main>`;
     removeLocTags(wrapper);
-    wrapper.querySelectorAll('*').forEach((el) => [...el.attributes]
-      .filter(({ name }) => name.startsWith('data-diff-'))
-      .forEach(({ name }) => el.removeAttribute(name)));
     return getSmartBlockMap(wrapper).filter(({ block }) => !block.isSection).map(shortHash);
   }
 

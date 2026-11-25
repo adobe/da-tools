@@ -45,6 +45,8 @@ const marker = (el) => ({
 const markers = (html, engine = daMerge) => [...doc(`<body><main>${html}</main></body>`, engine)
   .querySelectorAll('da-diff-deleted, [da-diff-added], da-diff-added')].map(marker);
 
+const openTarget = page('<div><da-diff-deleted data-mdast="ignore" data-diff-group="g1" data-diff-side="source" data-diff-kind="changed" data-diff-reason="differs"><p>A</p></da-diff-deleted><p da-diff-added="" data-diff-group="g1" data-diff-side="local" data-diff-kind="changed">A local</p></div>');
+
 const resolveAsMine = (html) => {
   const resolved = doc(html);
   removeLocTags(resolved);
@@ -359,6 +361,22 @@ describe('smartRollout with open markup', () => {
     expect(markers(result.html).every(({ group }) => group)).to.equal(true);
     expect(markers(result.html).find(({ reason }) => reason).reason).to.equal('page-too-large');
   });
+
+  it('keeps one group for open grouped markup when the page is too large', async () => {
+    const base = formatRolloutBase(PATH, await daMerge.getBlockHashes({ doc: toDoc('<div><p>A</p><p>B</p></div>'), site, config }));
+    const result = await daMerge.smartRollout({
+      source: toDoc('<div><p>A3</p><p>B</p></div>'),
+      dest: toDoc(`<div>${openGroup}<p>B</p></div>`, { rolloutbase: base }),
+      path: PATH,
+      site,
+      config,
+      maxUnits: 1,
+    });
+    expect(result.reason).to.equal('page-too-large');
+    const found = markers(result.html);
+    expect(found.map(({ group, side }) => [group, side])).to.deep.equal([['g1', 'source'], ['g1', 'local']]);
+    expect(found.map(({ kind }) => kind)).to.deep.equal(['changed', 'changed']);
+  });
 });
 
 describe('applyCopy', () => {
@@ -603,9 +621,39 @@ describe('applyCopy', () => {
       expect(mainOf(result.html)).to.equal('<div><p>A</p></div>');
       expect(result.report.outcome).to.equal('written');
     });
+
+    it('keeps one group for a unit that still has open grouped markup', async () => {
+      const result = await copy({
+        source: page('<div><p>A2</p></div>'), target: openTarget, behavior: 'merge', recordBaseline: false,
+      }, rawMerge);
+      expect(result.report.groups).to.deep.equal([{
+        id: 'g1', reason: 'reviewing-open-markup', sides: ['source', 'local'], kinds: ['changed'],
+      }]);
+    });
+
+    it('settles open grouped markup when the source matches its local side', async () => {
+      const result = await copy({
+        source: page('<div><p>A local</p></div>'), target: openTarget, behavior: 'merge', recordBaseline: true,
+      }, rawMerge);
+      expect(result.report.outcome).to.equal('written');
+      expect(mainOf(result.html, rawMerge)).to.equal('<div><p>A local</p></div>');
+    });
   });
 
   describe('smart-overwrite', () => {
+    it('keeps one group for a unit that still has open grouped markup and no baseline', async () => {
+      const result = await copy({ source: page('<div><p>A2</p></div>'), target: openTarget, behavior: 'smart-overwrite' }, rawMerge);
+      expect(result.report.groups).to.deep.equal([{
+        id: 'g1', reason: 'no-baseline', sides: ['source', 'local'], kinds: ['changed'],
+      }]);
+    });
+
+    it('settles open grouped markup without a baseline when the source matches its local side', async () => {
+      const result = await copy({ source: page('<div><p>A local</p></div>'), target: openTarget, behavior: 'smart-overwrite' }, rawMerge);
+      expect(result.report.outcome).to.equal('written');
+      expect(mainOf(result.html, rawMerge)).to.equal('<div><p>A local</p></div>');
+    });
+
     it('reviews every difference on the first copy and records the baseline', async () => {
       const result = await copy({ source: page('<div><p>A</p><p>B</p></div>'), target: page('<div><p>A local</p><p>B</p></div>'), behavior: 'smart-overwrite' });
       expect(result.report.outcome).to.equal('needs-review');
