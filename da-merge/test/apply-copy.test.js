@@ -152,6 +152,32 @@ describe('grouped diff markup', () => {
     expect(removedUpstream).to.equal(1);
   });
 
+  it('writes the reason on one marker of a group with several local units', async () => {
+    const { found } = await smartMarkers({
+      base: '<div><p>A</p></div><div><p>B</p><p>C</p></div>',
+      source: '<div><p>A</p></div>',
+      dest: '<div><p>A</p></div><div><p>B local</p><p>C local</p></div>',
+    });
+    expect(found).to.deep.equal([
+      {
+        group: 'g1', side: 'local', kind: 'removed', reason: 'both-changed',
+      },
+      {
+        group: 'g1', side: 'local', kind: 'removed', reason: null,
+      },
+    ]);
+  });
+
+  it('writes the reason once for a group that spans sections', async () => {
+    const { found } = await smartMarkers({
+      base: '<div><p>A</p></div><div><p>B</p></div><div><p>C</p></div>',
+      source: '<div><p>A</p></div>',
+      dest: '<div><p>A</p></div><div><p>B local</p></div><div><p>C local</p></div>',
+    });
+    expect(new Set(found.map(({ group }) => group)).size).to.equal(1);
+    expect(found.filter(({ reason }) => reason)).to.have.length(1);
+  });
+
   it('offers only the units new to the page as a source-only group of kind added', async () => {
     const { html, found } = await smartMarkers({
       base: '<div><h1>H</h1><p>A</p><p>B</p></div>',

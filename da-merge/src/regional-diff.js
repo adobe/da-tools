@@ -746,7 +746,9 @@ export default function createRegionalDiff({ Node, document }) {
   };
 
   function markedHtml({ parts, mark, group }) {
-    if (mark !== 'upstream') return parts.map((part) => addedHtml(part, group)).join('');
+    if (mark !== 'upstream') {
+      return parts.map((part, idx) => addedHtml(part, idx ? { ...group, reason: null } : group)).join('');
+    }
     const open = `<${DELETED_TAG} data-mdast="ignore"${attrString(groupAttrs(group))}>`;
     return `${open}${parts.map(partHtml).join('')}</${DELETED_TAG}>`;
   }
@@ -789,6 +791,8 @@ export default function createRegionalDiff({ Node, document }) {
   function markedEntryHtml(entry, groups) {
     const { mark, parts } = entry;
     const group = groups.get(entry.group);
+    const writeReason = mark === group.reasonMark && !group.reasonWritten;
+    if (writeReason) group.reasonWritten = true;
     const marked = markedHtml({
       parts,
       mark,
@@ -796,7 +800,7 @@ export default function createRegionalDiff({ Node, document }) {
         id: group.id,
         side: mark === 'upstream' ? SIDE.source : SIDE.local,
         kind: group.kind,
-        reason: mark === group.reasonMark ? group.reason : null,
+        reason: writeReason ? group.reason : null,
       },
     });
     if (!group.base || group.baseWritten) return marked;
