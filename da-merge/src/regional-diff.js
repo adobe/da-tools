@@ -725,12 +725,45 @@ export default function createRegionalDiff({ document }) {
    *   reordered: Boolean, swaps: String[], swapsAsBase: String[], sourceHashes: String[] }>}
    *   sourceHashes is the next baseline. Other fields: see threeWayMerge.
    */
+  const TOP_ITEMS = 'main > div > ul > li, main > div > ol > li';
+
+  // Rejected items leave source lists that changed since the baseline, unless the page has them.
+  async function withoutRejectedItems({
+    source, dest, base, rejected, site, config,
+  }) {
+    if (!rejected.length) return source;
+    const hashing = { site, config };
+    const copy = source.cloneNode(true);
+    const inBase = new Set(base);
+    const pageItems = new Set([...dest.querySelectorAll(TOP_ITEMS)]
+      .map((li) => reviewHash(li, hashing)));
+    const isRejectedItem = (li) => {
+      const hash = reviewHash(li, hashing);
+      return rejected.includes(hash) && !pageItems.has(hash);
+    };
+    const blocks = await getHashedBlocks(copy, hashing);
+    const lists = blocks.filter(({ block, hash }) => !block.isSection && !Array.isArray(block)
+      && isList(block) && !inBase.has(hash));
+    let removed = 0;
+    lists.forEach(({ block }) => {
+      [...block.children].filter(isRejectedItem).forEach((li) => {
+        li.remove();
+        removed += 1;
+      });
+      if (!block.children.length) removeFromSection(block);
+    });
+    return removed ? copy : source;
+  }
+
   async function smartMerge({
     base, source, dest, rejected = [], site, config, baselineDoc = null,
     reason = REASON.bothChanged, nextId = createGroupIds(dest),
   }) {
     const withReviewHash = rejected.length > 0;
-    const sourceBlocks = await getHashedBlocks(source, { site, config, withReviewHash });
+    const kept = await withoutRejectedItems({
+      source, dest, base, rejected, site, config,
+    });
+    const sourceBlocks = await getHashedBlocks(kept, { site, config, withReviewHash });
     const destBlocks = await getHashedBlocks(dest, { site, config });
     const rejectedBlocks = sourceBlocks.filter(isRejectedBlock(rejected));
     const baselineBlocks = baselineDoc && await getHashedBlocks(baselineDoc, { site, config });

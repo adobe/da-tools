@@ -112,6 +112,32 @@ describe('resolve, then copy again', () => {
     });
   });
 
+  it('keeps a rejected list item out of a list both sides changed since the baseline', async () => {
+    const { source, target } = CASES['list items'];
+    const first = await copy({ source, target, behavior: 'smart-overwrite' });
+    const resolved = resolveEach(first.html, CHOICE.mine);
+    const changed = source.replace('<li>Upstream item</li>', '<li>Upstream item</li><li>Another</li>');
+    const next = await copy({ source: changed, target: resolved, behavior: 'smart-overwrite' });
+    expect(hasMarkup(next.html)).to.equal(true);
+    expect(textOf(next.html)).to.include('Another');
+    expect(textOf(next.html)).to.include('Local item');
+    expect(textOf(next.html)).to.not.include('Upstream item');
+    const settled = resolveEach(next.html, CHOICE.both);
+    const again = await copy({ source: changed, target: settled, behavior: 'smart-overwrite' });
+    expect(again.report.outcome).to.equal('unchanged');
+  });
+
+  it('offers a rejected list item again when the page has it', async () => {
+    const { source, target } = CASES['list items'];
+    const first = await copy({ source, target, behavior: 'smart-overwrite' });
+    const resolved = resolveEach(first.html, CHOICE.mine).replace('<li>Local item</li>', '<li>Local item</li><li>Upstream item</li>');
+    const changed = source.replace('<li>Upstream item</li>', '<li>Upstream item</li><li>Another</li>');
+    const next = await copy({ source: changed, target: resolved, behavior: 'smart-overwrite' });
+    const upstreamSide = [...v2Merge.parse(next.html).querySelectorAll('da-diff-deleted')]
+      .map((el) => el.textContent).join();
+    expect(upstreamSide).to.include('Upstream item');
+  });
+
   it('settles a smart-overwrite conflict for every choice', async () => {
     const base = page('<p>A</p><p>B</p><p>C</p>');
     const source = page('<p>A</p><p>B upstream</p><p>C</p>');

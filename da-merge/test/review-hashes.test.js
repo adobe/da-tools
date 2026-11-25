@@ -167,7 +167,8 @@ describe('review hashes of list items and block groups', () => {
         rolloutbase: formatRolloutBase(PATH, base), rejectedHashes: itemHash(source, 'New'),
       });
       const result = await copy({ source, target, behavior: 'smart-overwrite' });
-      expect(textOf(result.html)).to.not.include('New');
+      expect(result.html).to.equal(null);
+      expect(result.report.outcome).to.equal('needs-review');
       const unrejected = await copy({
         source,
         target: page(`<ul><li>One</li><li>Two</li>${open}</ul>`, { rolloutbase: formatRolloutBase(PATH, base) }),
