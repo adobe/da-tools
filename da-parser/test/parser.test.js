@@ -963,6 +963,43 @@ describe('Parsing test suite', () => {
     expect(result2).to.include(`<div class="da-metadata"><div><div>delHashes</div><div>${delHashesValue}</div></div></div>`);
   });
 
+  it('reads a da-metadata value wrapped in a paragraph', async () => {
+    const html = `
+<body>
+  <main><div><p>Test content</p></div></main>
+  <div class="da-metadata">
+    <div>
+      <div>rolloutbase</div>
+      <div>
+        <p>/org/site/page.html|abc,def</p>
+      </div>
+    </div>
+  </div>
+</body>`;
+
+    const yDoc = new Y.Doc();
+    aem2doc(html, yDoc);
+
+    expect(yDoc.getMap('daMetadata').get('rolloutbase')).to.equal('/org/site/page.html|abc,def');
+    expect(doc2aem(yDoc)).to.include('<div><div>rolloutbase</div><div>/org/site/page.html|abc,def</div></div>');
+  });
+
+  it('keeps escaped da-metadata text as text', async () => {
+    const html = `
+<body>
+  <main><div><p>Test content</p></div></main>
+  <div class="da-metadata"><div><div>rolloutorder</div><div>x&lt;img src=y&gt; &amp; z</div></div></div>
+</body>`;
+
+    const yDoc = new Y.Doc();
+    aem2doc(html, yDoc);
+    const result = doc2aem(yDoc);
+
+    expect(yDoc.getMap('daMetadata').get('rolloutorder')).to.equal('x<img src=y> & z');
+    expect(result).to.include('<div><div>rolloutorder</div><div>x&lt;img src=y&gt; &amp; z</div></div>');
+    expect(result).to.not.include('<img');
+  });
+
   it('missing delHashes results in null and no da element in output', async () => {
     const html = `
 <body>

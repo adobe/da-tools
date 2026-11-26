@@ -16,7 +16,20 @@ import {
 } from 'y-prosemirror';
 import { DOMParser, DOMSerializer, Node as PMNode } from 'prosemirror-model';
 import { parseHTML, matches } from './html-parser.js';
-import { getSchema, isKnownHTMLTag } from './schema.js';
+import { getSchema, isKnownHTMLTag, DIFF_ATTRS } from './schema.js';
+
+const DIFF_ATTR_NAMES = Object.values(DIFF_ATTRS);
+const toHastName = (attr) => attr.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+
+const copyDiffAttrs = (from, to, getName = (name) => name) => {
+  DIFF_ATTR_NAMES.forEach((attr) => {
+    const name = getName(attr);
+    if (from?.[name] != null) to[name] = from[name];
+  });
+  return to;
+};
+
+const copyDiffProps = (from, to) => copyDiffAttrs(from, to, toHastName);
 
 // --- Defensive typed-string attr normalization -------------------------------
 // ProseMirror validates node attrs only inside Node.create(). Y.Map writes
@@ -267,12 +280,13 @@ function convertLocTags(html) {
   return html;
 }
 
-const createWrapper = (children) => ({
-  type: 'element',
-  tagName: 'da-diff-added',
-  properties: {},
-  children,
-});
+const createWrapper = (children, source = children[0]) => {
+  const properties = copyDiffProps(source?.properties, {});
+  children.forEach((child) => delete child.properties?.['da-diff-added']);
+  return {
+    type: 'element', tagName: 'da-diff-added', properties, children,
+  };
+};
 
 const hasDaDiffAdded = (child) => child.type === 'element' && child.properties?.['da-diff-added'] !== undefined;
 
@@ -330,7 +344,7 @@ function unwrapDiffAddedListTags(listNode) {
   listNode.children.forEach((child) => {
     if (child.tagName === 'li' && child.properties?.['da-diff-added'] !== undefined) {
       delete child.properties['da-diff-added'];
-      child.children = [createWrapper(child.children)];
+      child.children = [createWrapper(child.children, child)];
     }
   });
   return listNode;
@@ -372,6 +386,11 @@ function processDiffTags(main) {
   });
 }
 
+const textOf = (node) => {
+  if (node.type === 'text') return node.value;
+  return (node.children || []).map(textOf).join('');
+};
+
 const getMetadata = (metadataTree) => {
   const attrs = {};
   if (metadataTree?.children) {
@@ -379,8 +398,8 @@ const getMetadata = (metadataTree) => {
       if (rowDiv.tagName === 'div') {
         const divChildren = rowDiv.children?.filter((child) => child.tagName === 'div') || [];
         if (divChildren.length === 2) {
-          const key = divChildren[0].children?.[0]?.value;
-          const value = divChildren[1].children?.[0]?.value || null;
+          const key = textOf(divChildren[0]).trim();
+          const value = textOf(divChildren[1]).trim() || null;
           if (key) {
             attrs[key] = value;
           }
@@ -399,6 +418,11 @@ function encodeAttrValue(value) {
     .replaceAll('"', '&#x22;')
     .replaceAll("'", '&#x27;');
 }
+
+const encodeText = (value) => String(value)
+  .replaceAll('&', '&amp;')
+  .replaceAll('<', '&lt;')
+  .replaceAll('>', '&gt;');
 
 const encodeAttrQuotes = (value) => String(value).replaceAll('"', '&#x22;');
 
@@ -458,7 +482,7 @@ export function aem2doc(html, ydoc) {
           if (child.tagName === 'div' && child.properties.className?.length > 0) {
             modified = true;
             blockToTable(child, children);
-          } else if (['da-diff-deleted', 'da-diff-added'].includes(child.tagName)) {
+          } else if (['da-diff-deleted', 'da-diff-added', 'da-diff-base'].includes(child.tagName)) {
             modified = true;
             const locChildren = [];
             child.children.forEach((locChild) => {
@@ -601,7 +625,12 @@ export function aem2doc(html, ydoc) {
   prosemirrorToYXmlFragment(json, ydoc.getXmlFragment('prosemirror'));
 }
 
-function tohtml(node) {
+const getDiffMarkerAttrs = (attributes) => copyDiffAttrs(
+  attributes,
+  attributes?.['da-diff-added'] === '' ? { 'da-diff-added': '' } : {},
+);
+
+function tohtml(node, unitDiffAttrs = {}) {
   const { attributes } = node;
   let attrString = getAttrString(attributes);
   if (!node.children || node.children.length === 0) {
@@ -624,14 +653,14 @@ function tohtml(node) {
         delete attributes.href;
         delete attributes.title;
 
-        const daDiffAddedStr = attributes['da-diff-added'] === '' ? ' da-diff-added=""' : '';
+        const diffStr = getAttrString({ ...getDiffMarkerAttrs(attributes), ...unitDiffAttrs });
         delete attributes['da-diff-added'];
 
         attrString = getAttrString(attributes);
         const titleStr = title ? ` title="${encodeAttrValue(title)}"` : '';
-        return `<a href="${href}"${titleStr}${daDiffAddedStr}><picture><source srcset="${src}"><source srcset="${src}" media="(min-width: 600px)"><img${attrString}></picture></a>`;
+        return `<a href="${href}"${titleStr}${diffStr}><picture><source srcset="${src}"><source srcset="${src}" media="(min-width: 600px)"><img${attrString}></picture></a>`;
       }
-      return `<picture><source srcset="${src}"><source srcset="${src}" media="(min-width: 600px)"><img${attrString}></picture>`;
+      return `<picture${getAttrString(unitDiffAttrs)}><source srcset="${src}"><source srcset="${src}" media="(min-width: 600px)"><img${attrString}></picture>`;
     }
 
     const result = node.type !== 'br' ? `<${node.type}${attrString}></${node.type}>` : `<${node.type}>`;
@@ -655,7 +684,8 @@ function tohtml(node) {
     // as <a>, so they keep their <p> like a normally authored link.
     const isPicture = (child) => child.type === 'img' && child.attributes?.['data-edit-as'] !== 'image';
     if (nonEmptyChildren.every(isPicture)) {
-      return children.map((child) => tohtml(child)).join('');
+      const diffAttrs = getDiffMarkerAttrs(attributes);
+      return children.map((child) => tohtml(child, diffAttrs)).join('');
     }
   }
   return `<${node.type}${attrString}>${children.map((child) => tohtml(child)).join('')}</${node.type}>`;
@@ -690,6 +720,7 @@ function convertDiffAddedListTags(listNode) {
     if (child.type === 'li' && child.children[0]?.type === 'da-diff-added') {
       hasMarkers = true;
       child.attributes['da-diff-added'] = '';
+      copyDiffAttrs(child.children[0].attributes, child.attributes);
       child.children = child.children[0].children;
       child.children.forEach((node) => {
         if (node.attributes?.['da-diff-added'] !== undefined) {
@@ -700,13 +731,13 @@ function convertDiffAddedListTags(listNode) {
     } else if (child.type === 'li' && child.children[0]?.type === 'da-diff-deleted') {
       hasMarkers = true;
       // Wrap li with da-diff-deleted and add data-mdast attribute
+      const deletedContent = child.children[0];
       const deletedWrapper = {
         type: 'da-diff-deleted',
-        attributes: { 'data-mdast': 'ignore' },
+        attributes: copyDiffAttrs(deletedContent.attributes, { 'data-mdast': 'ignore' }),
         children: [],
       };
       // unwrap the da-diff-deleted from inside the li
-      const deletedContent = child.children[0];
       delete deletedContent.attributes.contenteditable;
       child.children = deletedContent.children;
       deletedWrapper.children.push(child);
@@ -743,6 +774,7 @@ export function tableToBlock(child, fragment) {
   const { dataId, daDiffAdded } = child.attributes || {};
   if (dataId) block.attributes['data-id'] = dataId;
   if (daDiffAdded === '') block.attributes['da-diff-added'] = '';
+  copyDiffAttrs(child.attributes, block.attributes);
   fragment.children.push(block);
   rows.forEach((row) => {
     const div = { type: 'div', attributes: {}, children: [] };
@@ -810,7 +842,7 @@ export function doc2aem(ydoc) {
     } else if (child.type === 'ul' || child.type === 'ol') {
       const updateList = convertDiffAddedListTags(child);
       fragment.children.push(updateList);
-    } else if (child.type === 'da-diff-deleted'
+    } else if (child.type === 'da-diff-deleted' || child.type === 'da-diff-base'
       // da-loc-* temporary code to support old regional edits
       || child.type === 'da-loc-deleted' || child.type === 'da-loc-added') {
       delete child.attributes.contenteditable;
@@ -828,6 +860,8 @@ export function doc2aem(ydoc) {
       // unwrap the content inside of da-diff-added
       const locChildren = child.children;
       locChildren.forEach((locChild) => {
+        if (locChild.type !== 'table') locChild.attributes['da-diff-added'] = '';
+        copyDiffAttrs(child.attributes, locChild.attributes);
         if (locChild.type === 'table') {
           tableToBlock(locChild, fragment);
         } else {
@@ -861,7 +895,7 @@ export function doc2aem(ydoc) {
   let daHTML = '';
   if (Object.keys(daMetadata).length > 0) {
     const daRows = Object.entries(daMetadata)
-      .map(([key, value]) => `<div><div>${key}</div><div>${value}</div></div>`)
+      .map(([key, value]) => `<div><div>${encodeText(key)}</div><div>${encodeText(value)}</div></div>`)
       .join('');
     daHTML = `\n  <div class="da-metadata">${daRows}</div>`;
   }
