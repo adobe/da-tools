@@ -176,5 +176,20 @@ describe('review hashes of list items and block groups', () => {
       });
       expect(textOf(unrejected.html)).to.include('New');
     });
+
+    it('leaves out a rejected source item the page has in another list when it merges a list item by item', async () => {
+      const before = page(`${list('One', 'Two')}<p>Mid</p>${list('New')}`);
+      const source = page(`${list('One', 'Two', 'New')}<p>Mid</p>${list('New')}`);
+      const base = await baseOf(before);
+      const open = '<li><da-diff-added data-diff-group="g1" data-diff-side="local" data-diff-kind="added">Local</da-diff-added></li>';
+      const target = page(`<ul><li>One</li><li>Two</li>${open}</ul><p>Mid</p>${list('New')}`, {
+        rolloutbase: formatRolloutBase(PATH, base), rejectedHashes: itemHash(source, 'New'),
+      });
+      const result = await copy({ source, target, behavior: 'smart-overwrite' });
+      expect(result.report.contentChanged).to.equal(false);
+      const items = [...daMerge.parse(result.html ?? target).querySelectorAll('main li')]
+        .map((li) => li.textContent);
+      expect(items).to.deep.equal(['One', 'Two', 'Local', 'New']);
+    });
   });
 });
