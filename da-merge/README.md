@@ -216,6 +216,10 @@ A conflict is a place where the source and the page both changed since the basel
 
 The other rules come from da-nx: [smart overwrite](https://github.com/adobe/da-nx/blob/main/docs/rollout-smart-overwrite.md) and [loc copy](https://github.com/adobe/da-nx/blob/main/docs/loc-copy.md).
 
+## Known limits
+
+- An editor that passes `site` but no `config` records review hashes without `source.fragment.hostnames` equivalence. So a rejected or accepted unit with an absolute AEM link to an equivalent site can be offered for review again on the next copy. No content is lost.
+
 ## Tests
 
 ```bash
