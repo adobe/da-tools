@@ -17,6 +17,8 @@ export default defineConfig([
   globalIgnores([
     'coverage',
     'dist/*',
+    'da-merge/src/object_hash.js',
+    'da-merge/test/mocks/da-parser-v2/*',
   ]),
   {
     languageOptions: {
@@ -71,6 +73,12 @@ export default defineConfig([
     rules: {
       'no-console': 'off',
       'no-unused-expressions': 0,
+    },
+  },
+  {
+    files: ['da-merge/src/**/*.js'],
+    rules: {
+      'no-restricted-globals': ['error', 'window', 'document', 'Node', 'DOMParser', 'fetch'],
     },
   },
 ]);

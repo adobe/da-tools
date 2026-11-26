@@ -1,0 +1,434 @@
+/*
+ * Copyright 2026 Adobe. All rights reserved.
+ * This file is licensed to you under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License. You may obtain a copy
+ * of the License at http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software distributed under
+ * the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR REPRESENTATIONS
+ * OF ANY KIND, either express or implied. See the License for the specific language
+ * governing permissions and limitations under the License.
+ */
+
+import { Schema } from 'prosemirror-model';
+import { addListNodes } from 'prosemirror-schema-list';
+import { tableNodes } from 'prosemirror-tables';
+
+function parseLocDOM(locTag) {
+  return [
+    {
+      tag: locTag,
+      contentElement: (dom) => dom,
+    },
+  ];
+}
+
+const topLevelAttrs = {
+  dataId: { default: null, validate: 'string|null' },
+  daDiffAdded: { default: null, validate: 'string|null' },
+};
+
+const getTopLevelToDomAttrs = (node) => {
+  const attrs = {};
+  if (node.attrs.dataId != null) attrs['data-id'] = node.attrs.dataId;
+  if (node.attrs.daDiffAdded === '') attrs['da-diff-added'] = '';
+  return attrs;
+};
+
+const getTopLevelParseAttrs = (dom) => ({
+  dataId: dom.getAttribute('dataId') ?? null,
+  daDiffAdded: dom.getAttribute('da-diff-added') ?? null,
+});
+
+export const DIFF_ATTRS = {
+  diffGroup: 'data-diff-group',
+  diffSide: 'data-diff-side',
+  diffKind: 'data-diff-kind',
+  diffReason: 'data-diff-reason',
+};
+
+const diffAttrs = Object.fromEntries(
+  Object.keys(DIFF_ATTRS).map((key) => [key, { default: null, validate: 'string|null' }]),
+);
+
+const getDiffParseAttrs = (dom) => Object.fromEntries(
+  Object.entries(DIFF_ATTRS).map(([key, attr]) => [key, dom.getAttribute(attr) ?? null]),
+);
+
+const getDiffToDomAttrs = (node) => Object.fromEntries(
+  Object.entries(DIFF_ATTRS)
+    .filter(([key]) => node.attrs[key] != null)
+    .map(([key, attr]) => [attr, node.attrs[key]]),
+);
+
+const getHeadingAttrs = (level) => (dom) => ({
+  level,
+  ...getTopLevelParseAttrs(dom),
+});
+
+/* Base nodes taken from prosemirror-schema-basic */
+const baseNodes = {
+  doc: { content: 'block+' },
+  paragraph: {
+    attrs: { ...topLevelAttrs },
+    content: 'inline*',
+    group: 'block',
+    parseDOM: [{ tag: 'p', getAttrs: getTopLevelParseAttrs }],
+    toDOM(node) {
+      return ['p', { ...getTopLevelToDomAttrs(node) }, 0];
+    },
+  },
+  blockquote: {
+    attrs: { ...topLevelAttrs },
+    content: 'block+',
+    group: 'block',
+    defining: true,
+    parseDOM: [{ tag: 'blockquote', getAttrs: getTopLevelParseAttrs }],
+    toDOM(node) {
+      return ['blockquote', { ...getTopLevelToDomAttrs(node) }, 0];
+    },
+  },
+  horizontal_rule: {
+    attrs: { daSectionName: { default: null, validate: 'string|null' } },
+    group: 'block',
+    parseDOM: [{ tag: 'hr', getAttrs: (dom) => ({ daSectionName: dom.getAttribute('data-section-name') || null }) }],
+    toDOM(node) {
+      const { daSectionName } = node.attrs;
+      return ['hr', daSectionName ? { 'data-section-name': daSectionName } : {}];
+    },
+  },
+  heading: {
+    attrs: {
+      level: { default: 1 },
+      ...topLevelAttrs,
+    },
+    content: 'inline*',
+    group: 'block',
+    defining: true,
+    parseDOM: [
+      { tag: 'h1', getAttrs: getHeadingAttrs(1) },
+      { tag: 'h2', getAttrs: getHeadingAttrs(2) },
+      { tag: 'h3', getAttrs: getHeadingAttrs(3) },
+      { tag: 'h4', getAttrs: getHeadingAttrs(4) },
+      { tag: 'h5', getAttrs: getHeadingAttrs(5) },
+      { tag: 'h6', getAttrs: getHeadingAttrs(6) },
+    ],
+    toDOM(node) {
+      return [`h${node.attrs.level}`, { ...getTopLevelToDomAttrs(node) }, 0];
+    },
+  },
+  code_block: {
+    attrs: { ...topLevelAttrs },
+    content: 'text*',
+    marks: '',
+    group: 'block',
+    code: true,
+    defining: true,
+    parseDOM: [{ tag: 'pre', preserveWhitespace: 'full', getAttrs: getTopLevelParseAttrs }],
+    toDOM(node) {
+      return ['pre', { ...getTopLevelToDomAttrs(node) }, ['code', 0]];
+    },
+  },
+  text: { group: 'inline' },
+  // due to bug in y-prosemirror, add href to image node
+  // which will be converted to a wrapping <a> tag
+  image: {
+    inline: true,
+    attrs: {
+      src: { validate: 'string' },
+      alt: { default: null, validate: 'string|null' },
+      title: { default: null, validate: 'string|null' },
+      href: { default: null, validate: 'string|null' },
+      dataFocalX: { default: null, validate: 'string|null' },
+      dataFocalY: { default: null, validate: 'string|null' },
+      editAs: { default: null, validate: 'string|null' },
+      ...topLevelAttrs,
+    },
+    group: 'inline',
+    draggable: true,
+    parseDOM: [
+      {
+        tag: 'a[data-edit-as]',
+        priority: 60,
+        getAttrs(dom) {
+          const src = dom.getAttribute('href');
+          if (src == null) return false;
+          return {
+            src,
+            alt: dom.getAttribute('title') || null,
+            editAs: 'image',
+            ...getTopLevelParseAttrs(dom),
+          };
+        },
+      },
+      {
+        tag: 'img[src]',
+        getAttrs(dom) {
+          const attrs = {
+            src: dom.getAttribute('src'),
+            alt: dom.getAttribute('alt'),
+            href: dom.getAttribute('href'),
+            dataFocalX: dom.getAttribute('data-focal-x'),
+            dataFocalY: dom.getAttribute('data-focal-y'),
+            editAs: dom.getAttribute('data-edit-as') === 'image' ? 'image' : null,
+            ...getTopLevelParseAttrs(dom),
+          };
+          const title = dom.getAttribute('title');
+          // TODO: Remove this once helix properly supports data-focal-x and data-focal-y
+          if (!title?.includes('data-focal:')) {
+            attrs.title = title;
+          }
+          return attrs;
+        },
+      },
+    ],
+    toDOM(node) {
+      const {
+        src, alt, title, href, dataFocalX, dataFocalY, editAs,
+      } = node.attrs;
+      const attrs = {
+        src,
+        alt,
+        title,
+        href,
+        ...getTopLevelToDomAttrs(node),
+      };
+      if (dataFocalX != null) attrs['data-focal-x'] = dataFocalX;
+      if (dataFocalY != null) attrs['data-focal-y'] = dataFocalY;
+      if (editAs != null) attrs['data-edit-as'] = editAs;
+      // TODO: This is temp code to store the focal data in the title attribute
+      // Once helix properly supports data-focal-x and data-focal-y, we can remove this code
+      if (dataFocalX != null) attrs.title = `data-focal:${dataFocalX},${dataFocalY}`;
+      return ['img', attrs];
+    },
+  },
+  hard_break: {
+    inline: true,
+    group: 'inline',
+    selectable: false,
+    parseDOM: [{ tag: 'br' }],
+    toDOM() {
+      return ['br'];
+    },
+  },
+  loc_added: {
+    group: 'block',
+    content: 'block+',
+    atom: true,
+    isolating: true,
+    parseDOM: parseLocDOM('da-loc-added'),
+    toDOM: () => ['da-loc-added', { contenteditable: false }, 0],
+  },
+  diff_added: {
+    attrs: { ...diffAttrs },
+    group: 'block',
+    content: 'block+',
+    atom: true,
+    isolating: true,
+    parseDOM: [
+      {
+        tag: 'da-diff-added',
+        getAttrs: getDiffParseAttrs,
+        contentElement: (dom) => {
+          [...dom.children].forEach((child) => {
+            if (child.properties) {
+              // eslint-disable-next-line no-param-reassign
+              child.properties['da-diff-added'] = '';
+            }
+          });
+          return dom;
+        },
+      },
+      // Note: da-loc-added is handled by loc_added node type (defined above),
+      // so we don't need a duplicate entry here
+    ],
+    toDOM: (node) => ['da-diff-added', { contenteditable: false, ...getDiffToDomAttrs(node) }, 0],
+  },
+  loc_deleted: {
+    group: 'block',
+    content: 'block+',
+    atom: true,
+    isolating: true,
+    parseDOM: parseLocDOM('da-loc-deleted'),
+    toDOM: () => ['da-loc-deleted', { contenteditable: false }, 0],
+  },
+  diff_deleted: {
+    attrs: { ...diffAttrs },
+    group: 'block',
+    content: 'block+',
+    atom: true,
+    isolating: true,
+    parseDOM: [
+      {
+        tag: 'da-diff-deleted',
+        getAttrs: getDiffParseAttrs,
+        contentElement: (dom) => dom,
+      },
+      // Note: da-loc-deleted is handled by loc_deleted node type (defined above),
+      // so we don't need a duplicate entry here
+    ],
+    toDOM: (node) => ['da-diff-deleted', { 'data-mdast': 'ignore', contenteditable: false, ...getDiffToDomAttrs(node) }, 0],
+  },
+  diff_base: {
+    attrs: { diffGroup: { default: null, validate: 'string|null' } },
+    group: 'block',
+    content: 'block+',
+    atom: true,
+    isolating: true,
+    parseDOM: [
+      {
+        tag: 'da-diff-base',
+        getAttrs: (dom) => ({ diffGroup: dom.getAttribute('data-diff-group') ?? null }),
+        contentElement: (dom) => dom,
+      },
+    ],
+    toDOM: (node) => ['da-diff-base', {
+      'data-mdast': 'ignore',
+      contenteditable: false,
+      ...(node.attrs.diffGroup != null ? { 'data-diff-group': node.attrs.diffGroup } : {}),
+    }, 0],
+  },
+};
+
+// Mark declaration order sets DOM nesting: the earliest-declared mark serializes
+// outermost. `link` must come after em/strong (etc.) so links render innermost —
+// `<em><strong><a>` — matching EDS convention so decorateButtons works.
+const baseMarks = {
+  s: {
+    parseDOM: [{ tag: 's' }],
+    toDOM() {
+      return ['s', 0];
+    },
+  },
+  em: {
+    parseDOM: [
+      { tag: 'i' },
+      { tag: 'em' },
+      { style: 'font-style=italic' },
+      { style: 'font-style=normal', clearMark: (m) => m.type.name === 'em' },
+    ],
+    toDOM() {
+      return ['em', 0];
+    },
+  },
+  strong: {
+    parseDOM: [
+      { tag: 'strong' },
+      // This works around a Google Docs misbehavior where
+      // pasted content will be inexplicably wrapped in `<b>`
+      // tags with a font-weight normal.
+      { tag: 'b', getAttrs: (node) => node.style.fontWeight !== 'normal' && null },
+      { style: 'font-weight=400', clearMark: (m) => m.type.name === 'strong' },
+      { style: 'font-weight', getAttrs: (value) => /^(bold(er)?|[5-9]\d{2,})$/.test(value) && null },
+    ],
+    toDOM() {
+      return ['strong', 0];
+    },
+  },
+  link: {
+    attrs: {
+      href: {},
+      title: { default: null },
+      ...topLevelAttrs,
+    },
+    inclusive: false,
+    parseDOM: [
+      {
+        tag: 'a[href]',
+        getAttrs(dom) {
+          return { href: dom.getAttribute('href'), title: dom.getAttribute('title'), ...getTopLevelParseAttrs(dom) };
+        },
+      },
+    ],
+    toDOM(node) {
+      const { href, title } = node.attrs;
+      return ['a', { href, title, ...getTopLevelToDomAttrs(node) }, 0];
+    },
+  },
+  code: {
+    parseDOM: [{ tag: 'code' }],
+    toDOM() {
+      return ['code', 0];
+    },
+  },
+  u: {
+    parseDOM: [{ tag: 'u' }],
+    toDOM() {
+      return ['u', 0];
+    },
+  },
+};
+
+const baseSchema = new Schema({ nodes: baseNodes, marks: baseMarks });
+
+function addCustomMarks(marks) {
+  const sup = {
+    parseDOM: [{ tag: 'sup' }, { clearMark: (m) => m.type.name === 'sup' }],
+    toDOM() { return ['sup', 0]; },
+  };
+
+  const sub = {
+    parseDOM: [{ tag: 'sub' }, { clearMark: (m) => m.type.name === 'sub' }],
+    toDOM() { return ['sub', 0]; },
+  };
+
+  const contextHighlight = { toDOM: () => ['span', { class: 'highlighted-context' }, 0] };
+
+  return marks
+    .addToEnd('sub', sub)
+    .addToEnd('sup', sup)
+    .addToEnd('contextHighlightingMark', contextHighlight);
+}
+
+function getTableNodeSchema() {
+  const schema = tableNodes({ tableGroup: 'block', cellContent: 'block+' });
+  schema.table.attrs = { ...topLevelAttrs };
+  schema.table.parseDOM = [{ tag: 'table', getAttrs: getTopLevelParseAttrs }];
+  schema.table.toDOM = (node) => ['table', node.attrs, ['tbody', 0]];
+  return schema;
+}
+
+function addAttrsToListNode(_nodes, listType, tag) {
+  const nodes = _nodes;
+  nodes.get(listType).attrs = { ...topLevelAttrs };
+  nodes.get(listType).parseDOM = [{ tag, getAttrs: getTopLevelParseAttrs }];
+  nodes.get(listType).toDOM = (node) => [tag, { ...getTopLevelToDomAttrs(node) }, 0];
+}
+
+function addListNodeSchema(nodes) {
+  const withListNodes = addListNodes(nodes, 'block+', 'block');
+  addAttrsToListNode(withListNodes, 'bullet_list', 'ul');
+  addAttrsToListNode(withListNodes, 'ordered_list', 'ol');
+  return withListNodes;
+}
+
+// eslint-disable-next-line import/prefer-default-export
+export function getSchema() {
+  let { nodes } = baseSchema.spec;
+  const { marks } = baseSchema.spec;
+  nodes = addListNodeSchema(nodes);
+
+  // Update diff nodes to allow list_item after list nodes are added
+  nodes = nodes.update('diff_deleted', { ...nodes.get('diff_deleted'), content: '(block | list_item)+' });
+  nodes = nodes.update('diff_added', { ...nodes.get('diff_added'), content: '(block | list_item)+' });
+  nodes = nodes.update('diff_base', { ...nodes.get('diff_base'), content: '(block | list_item)+' });
+  nodes = nodes.update('loc_deleted', { ...nodes.get('loc_deleted'), content: '(block | list_item)+' });
+  nodes = nodes.update('loc_added', { ...nodes.get('loc_added'), content: '(block | list_item)+' });
+
+  nodes = nodes.append(getTableNodeSchema());
+  const customMarks = addCustomMarks(marks);
+  return new Schema({ nodes, marks: customMarks });
+}
+
+const KNOWN_HTML_TAGS = [
+  'div', 'p', 'hr', 'body', 'header', 'main', 'footer',
+  'em', 'strong', 's', 'u', 'i', 'b', 'span',
+  'blockquote', 'picture', 'source', 'img', 'a',
+  'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+  'pre', 'code', 'img', 'br', 'ul', 'ol', 'li', 'table', 'thead', 'tbody', 'tr', 'td', 'th',
+  'sup', 'sub', 'da-loc-added', 'da-loc-deleted', 'da-diff-added', 'da-diff-deleted', 'da-diff-base',
+];
+
+export function isKnownHTMLTag(tag) {
+  return KNOWN_HTML_TAGS.includes(tag);
+}

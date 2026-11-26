@@ -5,7 +5,8 @@
   "private": true,
   "type": "module",
   "workspaces": [
-    "da-parser"
+    "da-parser",
+    "da-merge"
   ],
   "scripts": {
     "test": "nx run-many -t test",

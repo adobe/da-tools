@@ -1,0 +1,910 @@
+/*
+ * Copyright 2026 Adobe. All rights reserved.
+ * This file is licensed to you under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License. You may obtain a copy
+ * of the License at http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software distributed under
+ * the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR REPRESENTATIONS
+ * OF ANY KIND, either express or implied. See the License for the specific language
+ * governing permissions and limitations under the License.
+ */
+/* eslint-disable no-param-reassign */
+
+import {
+  prosemirrorToYXmlFragment, yDocToProsemirrorJSON,
+} from 'y-prosemirror';
+import { DOMParser, DOMSerializer, Node as PMNode } from 'prosemirror-model';
+import { parseHTML, matches } from './html-parser.js';
+import { getSchema, isKnownHTMLTag, DIFF_ATTRS } from './schema.js';
+
+const DIFF_ATTR_NAMES = Object.values(DIFF_ATTRS);
+const toHastName = (attr) => attr.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+
+const copyDiffAttrs = (from, to, getName = (name) => name) => {
+  DIFF_ATTR_NAMES.forEach((attr) => {
+    const name = getName(attr);
+    if (from?.[name] != null) to[name] = from[name];
+  });
+  return to;
+};
+
+const copyDiffProps = (from, to) => copyDiffAttrs(from, to, toHastName);
+
+// --- Defensive typed-string attr normalization -------------------------------
+// ProseMirror validates node attrs only inside Node.create(). Y.Map writes
+// however land in the Yjs state unvalidated, so an old/buggy client or a
+// direct Yjs integration can deposit a non-string value into a typed-string
+// attr (e.g. image.alt). When doc2aem later reconstructs the doc that
+// triggers RangeError: Expected value of type string,null for attribute alt
+// on type image, got object, which bricks the da-collab worker save loop.
+//
+// Coerce only schema-declared typed string attrs (validate "string" and
+// "string|null") between yDocToProsemirrorJSON() and Node.fromJSON(). Other
+// typed attrs (number, boolean, etc.) are left untouched.
+
+const STRING_VALIDATORS = new Set(['string', 'string|null']);
+const warnedAttrs = new Set();
+
+function getTypedStringAttrSpecs(schema) {
+  const specs = Object.create(null);
+  Object.entries(schema.nodes).forEach(([nodeName, nodeType]) => {
+    const attrSpecs = nodeType.spec.attrs;
+    if (!attrSpecs) return;
+    const nodeSpecs = Object.create(null);
+    Object.entries(attrSpecs).forEach(([attrName, attrSpec]) => {
+      if (!STRING_VALIDATORS.has(attrSpec.validate)) return;
+      nodeSpecs[attrName] = {
+        allowsNull: attrSpec.validate === 'string|null',
+        hasDefault: Object.prototype.hasOwnProperty.call(attrSpec, 'default'),
+      };
+    });
+    if (Object.keys(nodeSpecs).length > 0) specs[nodeName] = nodeSpecs;
+  });
+  return specs;
+}
+
+function coerceNodeAttrs(jsonNode, nodeSpecs, docId) {
+  const { attrs } = jsonNode;
+  Object.entries(nodeSpecs).forEach(([attrName, { allowsNull, hasDefault }]) => {
+    if (!(attrName in attrs)) return;
+    const value = attrs[attrName];
+    if (typeof value === 'string') return;
+    if (value === null || value === undefined) return;
+    const warnKey = `${docId}:${jsonNode.type}:${attrName}`;
+    if (!warnedAttrs.has(warnKey)) {
+      warnedAttrs.add(warnKey);
+      // eslint-disable-next-line no-console
+      console.warn(`[da-parser] doc2aem coerced non-string attr "${attrName}" on <${jsonNode.type}> (doc=${docId})`);
+    }
+    if (allowsNull) {
+      attrs[attrName] = null;
+    } else if (hasDefault) {
+      delete attrs[attrName];
+    } else {
+      // No default, no null allowed: fall back to empty string so Node.fromJSON
+      // does not throw on a required typed string attr (e.g. image.src).
+      attrs[attrName] = '';
+    }
+  });
+}
+
+function sanitizeProsemirrorState(state, schema, docId) {
+  const typedSpecs = getTypedStringAttrSpecs(schema);
+  const walk = (node) => {
+    if (!node || typeof node !== 'object') return;
+    if (node.attrs && node.type && typedSpecs[node.type]) {
+      coerceNodeAttrs(node, typedSpecs[node.type], docId);
+    }
+    if (Array.isArray(node.content)) node.content.forEach(walk);
+  };
+  if (Array.isArray(state?.content)) state.content.forEach(walk);
+  return state;
+}
+// -----------------------------------------------------------------------------
+
+function escapeBrackets(text) {
+  return text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+}
+
+function escapeAttr(text) {
+  return escapeBrackets(text).replaceAll('"', '&quot;');
+}
+
+export const FIRST_SECTION_NAME_KEY = 'first-section-name';
+
+function convertSectionBreak(node) {
+  if (!node) return;
+  if (node.children) {
+    node.children.forEach(convertSectionBreak);
+  }
+  if (node.tagName === 'p' && node.children && node.children.length === 1) {
+    if (node.children[0].type === 'text' && node.children[0].value === '---') {
+      node.children.length = 0;
+      node.tagName = 'hr';
+    }
+  }
+}
+
+function divFilter(parent) {
+  return parent.children.filter((child) => child.tagName === 'div');
+}
+
+function blockToTable(child, children) {
+  children.push({
+    type: 'element', tagName: 'p', children: [], properties: {},
+  });
+  const classes = Array.from(child.properties.className);
+  const name = classes.shift();
+  const blockName = classes.length > 0 ? `${name} (${classes.join(', ')})` : name;
+  const rows = [...divFilter(child)];
+  const maxCols = rows.reduce((colCount, row) => {
+    const cols = divFilter(row);
+    return cols.length > colCount ? cols.length : colCount;
+  }, 0);
+
+  const table = {
+    type: 'element', tagName: 'table', children: [], properties: {},
+  };
+
+  table.properties.dataId = child.properties.dataId;
+  table.properties['da-diff-added'] = child.properties['da-diff-added'];
+
+  children.push(table);
+  const headerRow = {
+    type: 'element', tagName: 'tr', children: [], properties: {},
+  };
+
+  const td = {
+    type: 'element', tagName: 'td', children: [{ type: 'text', value: blockName }], properties: { colSpan: maxCols },
+  };
+
+  headerRow.children.push(td);
+  table.children.push(headerRow);
+  rows.filter((row) => row.tagName === 'div').forEach((row) => {
+    const tr = {
+      type: 'element', tagName: 'tr', children: [], properties: {},
+    };
+    const cells = (row.children ? [...row.children] : [row]).filter((cell) => cell.type !== 'text' || (cell.value && cell.value.trim() !== '\n' && cell.value.trim() !== ''));
+    cells.forEach((cell, idx) => {
+      const tdi = {
+        type: 'element', tagName: 'td', children: [], properties: {},
+      };
+      if (cells.length < maxCols && idx === cells.length - 1) {
+        tdi.properties.colSpan = maxCols - idx;
+      }
+      tdi.children.push(cells[idx]);
+      tr.children.push(tdi);
+    });
+    table.children.push(tr);
+  });
+  children.push({
+    type: 'element', tagName: 'p', children: [], properties: {},
+  });
+}
+
+/**
+ * Recursively traverses a node tree and fixes image links by moving link attributes to img elements
+ */
+function fixImageLinks(node) {
+  if (!node) return node;
+
+  // Recursively process children first
+  if (node.children) {
+    // Process children and collect indices of <a> tags that wrap images
+    const childrenToReplace = [];
+
+    node.children.forEach((child, index) => {
+      if (child.tagName === 'a' && child.children?.length > 0) {
+        const {
+          href, title,
+          'da-diff-added': daDiffAdded,
+        } = child.properties;
+        let hasImages = false;
+
+        const propsToAdd = {
+          href,
+          title,
+          ...(daDiffAdded === '' ? { 'da-diff-added': daDiffAdded } : {}),
+        };
+
+        child.children.forEach((linkChild) => {
+          if (linkChild.tagName === 'picture') {
+            hasImages = true;
+            linkChild.children.forEach((pictureChild) => {
+              if (pictureChild.tagName === 'img') {
+                pictureChild.properties = {
+                  ...pictureChild.properties,
+                  ...propsToAdd,
+                };
+              }
+            });
+          } else if (linkChild.tagName === 'img') {
+            hasImages = true;
+            linkChild.properties = {
+              ...linkChild.properties,
+              ...propsToAdd,
+            };
+          }
+        });
+
+        // If this link wraps images, mark it for replacement
+        if (hasImages) {
+          childrenToReplace.push({ index, children: child.children });
+        }
+      } else {
+        fixImageLinks(child);
+      }
+    });
+
+    // Replace <a> tags that wrap images with their children
+    if (childrenToReplace.length > 0) {
+      const newChildren = [];
+      let replaceIndex = 0;
+
+      node.children.forEach((child, index) => {
+        if (replaceIndex < childrenToReplace.length
+          && childrenToReplace[replaceIndex].index === index) {
+          // Replace this <a> tag with its children
+          newChildren.push(...childrenToReplace[replaceIndex].children);
+          replaceIndex += 1;
+        } else {
+          newChildren.push(child);
+        }
+      });
+
+      node.children = newChildren;
+    }
+  }
+
+  return node;
+}
+
+function removeComments(node) {
+  if (!node) return node;
+  node.children = node.children?.filter(
+    (child) => child.type !== 'comment' && child.type !== 'doctype',
+  ) || [];
+  node.children.forEach(removeComments);
+  return node;
+}
+
+export const EMPTY_DOC = '<body><header></header><main><div></div></main><footer></footer></body>';
+
+function convertLocTags(html) {
+  // TODO: Remove this once we no longer support old regional edits
+  html = html.replaceAll('<da-loc-added', '<da-diff-added')
+    .replaceAll('<da-loc-deleted', '<da-diff-deleted')
+    .replaceAll('</da-loc-added', '</da-diff-added')
+    .replaceAll('</da-loc-deleted', '</da-diff-deleted');
+  return html;
+}
+
+const createWrapper = (children, source = children[0]) => {
+  const properties = copyDiffProps(source?.properties, {});
+  children.forEach((child) => delete child.properties?.['da-diff-added']);
+  return {
+    type: 'element', tagName: 'da-diff-added', properties, children,
+  };
+};
+
+const hasDaDiffAdded = (child) => child.type === 'element' && child.properties?.['da-diff-added'] !== undefined;
+
+const isBlockGroupStart = (child) => child.tagName === 'div' && child.properties?.className?.includes('block-group-start');
+
+const isBlockGroupEnd = (child) => child.tagName === 'div' && child.properties?.className?.includes('block-group-end');
+
+const collectBlockGroup = (children, startIndex) => {
+  const endIndex = children.findIndex(
+    (child, index) => index > startIndex && isBlockGroupEnd(child),
+  );
+
+  return {
+    elementsToWrap: children.slice(startIndex, endIndex === -1 ? children.length : endIndex + 1),
+    endIndex: endIndex === -1 ? children.length - 1 : endIndex,
+  };
+};
+
+function wrapDiffDeletedListTags(listNode) {
+  if (!listNode?.children) return listNode;
+
+  const newChildren = [];
+  let hasDeletedMarkers = false;
+
+  listNode.children.forEach((child) => {
+    if (child.tagName === 'da-diff-deleted' && child.children[0]?.tagName === 'li') {
+      hasDeletedMarkers = true;
+      // Unwrap da-diff-deleted from around li, move it inside
+      const li = child.children[0];
+      delete child.properties['data-mdast'];
+      delete child.properties.contenteditable;
+      // Wrap all li children with da-diff-deleted
+      li.children = [{
+        type: 'element',
+        tagName: 'da-diff-deleted',
+        properties: child.properties,
+        children: li.children,
+      }];
+      newChildren.push(li);
+    } else {
+      newChildren.push(child);
+    }
+  });
+
+  if (hasDeletedMarkers) {
+    listNode.children = newChildren;
+  }
+
+  return listNode;
+}
+
+function unwrapDiffAddedListTags(listNode) {
+  if (!listNode?.children) return listNode;
+
+  listNode.children.forEach((child) => {
+    if (child.tagName === 'li' && child.properties?.['da-diff-added'] !== undefined) {
+      delete child.properties['da-diff-added'];
+      child.children = [createWrapper(child.children, child)];
+    }
+  });
+  return listNode;
+}
+
+/**
+ * Processes diff tags (da-diff-added and da-diff-deleted) in the document
+ * - Wraps elements with da-diff-added attribute in a da-diff-added element
+ * - Transforms list items with diff markers
+ * - If the element is a block-group-start, it will wrap the entire block-group
+ */
+function processDiffTags(main) {
+  if (!main?.children) return;
+
+  main.children.forEach((sectionDiv) => {
+    if (sectionDiv.tagName !== 'div' || !sectionDiv.children) return;
+
+    const children = [...sectionDiv.children];
+    const newChildren = [];
+
+    for (let i = 0; i < children.length; i += 1) {
+      const child = children[i];
+      if (hasDaDiffAdded(child)) {
+        if (isBlockGroupStart(child)) {
+          const { elementsToWrap, endIndex } = collectBlockGroup(children, i);
+          newChildren.push(createWrapper(elementsToWrap));
+          i = endIndex; // Skip all the wrapped elements
+        } else {
+          newChildren.push(createWrapper([child]));
+        }
+      } else if (child.tagName === 'ul' || child.tagName === 'ol') {
+        newChildren.push(unwrapDiffAddedListTags(wrapDiffDeletedListTags(child)));
+      } else {
+        newChildren.push(child);
+      }
+    }
+
+    sectionDiv.children = newChildren;
+  });
+}
+
+const textOf = (node) => {
+  if (node.type === 'text') return node.value;
+  return (node.children || []).map(textOf).join('');
+};
+
+const getMetadata = (metadataTree) => {
+  const attrs = {};
+  if (metadataTree?.children) {
+    metadataTree.children.forEach((rowDiv) => {
+      if (rowDiv.tagName === 'div') {
+        const divChildren = rowDiv.children?.filter((child) => child.tagName === 'div') || [];
+        if (divChildren.length === 2) {
+          const key = textOf(divChildren[0]).trim();
+          const value = textOf(divChildren[1]).trim() || null;
+          if (key) {
+            attrs[key] = value;
+          }
+        }
+      }
+    });
+  }
+  return attrs;
+};
+
+const TEXT_ATTRS = new Set(['alt', 'title']);
+
+function encodeAttrValue(value) {
+  return String(value)
+    .replaceAll('&', '&#x26;')
+    .replaceAll('"', '&#x22;')
+    .replaceAll("'", '&#x27;');
+}
+
+const encodeText = (value) => String(value)
+  .replaceAll('&', '&amp;')
+  .replaceAll('<', '&lt;')
+  .replaceAll('>', '&gt;');
+
+const encodeAttrQuotes = (value) => String(value).replaceAll('"', '&#x22;');
+
+const getAttrString = (attributes) => Object.entries(attributes)
+  .map(([key, value]) => ` ${key}="${TEXT_ATTRS.has(key) ? encodeAttrValue(value) : encodeAttrQuotes(value)}"`)
+  .join('');
+
+function convertCustomTagsIntoText(node, parent) {
+  if (!node) return node;
+  if (node.type === 'element' && !isKnownHTMLTag(node.tagName)) {
+    const textNode = { type: 'text', value: `<${node.tagName}${getAttrString(node.properties)}>` };
+    const idx = parent.children.indexOf(node);
+    if (idx >= 0) {
+      parent.children.splice(idx, 1, textNode);
+      parent.children.push(...node.children);
+    }
+  }
+  if (node.children) {
+    const children = [...node.children]; // Take a copy as next line might modify the children array
+    children.forEach((n) => convertCustomTagsIntoText(n, node));
+  }
+  return node;
+}
+
+export function aem2doc(html, ydoc) {
+  if (!html) {
+    html = EMPTY_DOC;
+  }
+  if (html.includes('<da-loc-added') || html.includes('<da-loc-deleted')) {
+    html = convertLocTags(html);
+  }
+
+  const tree = parseHTML(html);
+  // Strip comment/doctype nodes everywhere before walking the tree --
+  // ProseMirror DOMParser cannot see HTML comments through our HAST proxy
+  // (the proxy reports non-text nodes as nodeType 1 with an undefined
+  // nodeName), so a top-level comment in a doc lacking <main> would throw
+  // TypeError: Cannot read properties of undefined (reading toLowerCase).
+  removeComments(tree);
+  const daMetadataEl = tree.children.find(
+    (child) => child.tagName === 'div' && child.properties?.className?.includes('da-metadata'),
+  );
+  const daMetadata = getMetadata(daMetadataEl);
+
+  const main = tree.children.find((child) => child.tagName === 'main');
+  if (main) {
+    if (html.includes('da-diff-added') || html.includes('da-diff-deleted')) {
+      processDiffTags(main);
+    }
+    fixImageLinks(main);
+    convertCustomTagsIntoText(main);
+    (main.children || []).forEach((section) => {
+      if (section.tagName === 'div' && section.children) {
+        const children = [];
+        let modified = false;
+        section.children.forEach((child) => {
+          if (child.tagName === 'div' && child.properties.className?.length > 0) {
+            modified = true;
+            blockToTable(child, children);
+          } else if (['da-diff-deleted', 'da-diff-added', 'da-diff-base'].includes(child.tagName)) {
+            modified = true;
+            const locChildren = [];
+            child.children.forEach((locChild) => {
+              if (locChild.tagName === 'div' && locChild.properties.className?.length > 0) {
+                blockToTable(locChild, locChildren);
+              } else {
+                locChildren.push(locChild);
+              }
+            });
+            section.children = children;
+
+            child.children = locChildren;
+            children.push(child);
+          } else {
+            children.push(child);
+          }
+        });
+        if (modified) {
+          section.children = children;
+        }
+      }
+    });
+
+    convertSectionBreak(main);
+    let count = 0;
+
+    const getEl = (tagName) => ({
+      type: 'element', tagName, children: [], properties: {},
+    });
+
+    main.children = main.children.flatMap((node) => {
+      const result = [];
+      if (node.tagName === 'div') {
+        const daSectionName = node.properties?.dataSectionName || null;
+        if (count > 0) {
+          const hr = getEl('hr');
+          hr.properties['data-section-name'] = daSectionName;
+          result.push(getEl('p'));
+          result.push(hr);
+          result.push(getEl('p'));
+          result.push(...node.children);
+        } else {
+          daMetadata[FIRST_SECTION_NAME_KEY] = daSectionName;
+          result.push(node);
+        }
+        count += 1;
+      } else {
+        result.push(node);
+      }
+      return result;
+    });
+  }
+
+  const handler2 = {
+    get(target, prop) {
+      const source = target;
+      if (prop === 'firstChild') {
+        if (target.children.length === 0) return null;
+        for (let i = 0; i < target.children.length - 1; i += 1) {
+          source.children[i].nextSibling = new Proxy(target.children[i + 1], handler2);
+          if (i > 0) {
+            source.children[i].previousSibling = new Proxy(target.children[i - 1], handler2);
+          } else {
+            source.children[i].previousSibling = new Proxy(
+              target.children[target.children.length - 1],
+              handler2,
+            );
+          }
+        }
+        return new Proxy(target.children[0], handler2);
+      }
+      if (prop === 'nodeType') {
+        return target.type === 'text' ? 3 : 1;
+      }
+      if (prop === 'nodeValue') {
+        return target.value;
+      }
+
+      if (prop === 'nextSibling') {
+        return target.nextSibling;
+      }
+
+      if (prop === 'previousSibling') {
+        return target.previousSibling;
+      }
+
+      if (prop === 'nodeName') {
+        return target.tagName?.toUpperCase();
+      }
+
+      if (prop === 'matches') {
+        return (selector) => matches(selector, target);
+      }
+
+      if (prop === 'getAttribute') {
+        return (name) => {
+          // when `tree` is created using `fromHtml` in hast-util-from-html
+          // that then calls fromParse5 in hast-util-from-parse5
+          // which converts the `colspan`/`rowspan` attribute to `colSpan`/`rowSpan`
+          // and `data-*` attributes to camelCase (`data-focal-x` -> `dataFocalX`)
+          if (name === 'colspan') {
+            name = 'colSpan';
+          }
+          if (name === 'rowspan') {
+            name = 'rowSpan';
+          }
+          if (name.startsWith('data-') && target.properties?.[name] === undefined) {
+            name = name.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+          }
+          return target.properties ? target.properties[name] : undefined;
+        };
+      }
+      /* c8 ignore start */
+      // impossible to generate a test scenario for this
+      if (prop === 'hasAttribute') {
+        return (name) => target.properties && target.properties[name];
+      }
+
+      if (prop === 'style') {
+        return {};
+      }
+      return Reflect.get(target, prop);
+      /* c8 ignore end */
+    },
+  };
+
+  const schema = getSchema();
+  const json = DOMParser.fromSchema(schema).parse(new Proxy(main || tree, handler2));
+
+  // Store da attributes in yMap since y-prosemirror doesn't preserve doc-level attrs
+  const mdMap = ydoc.getMap('daMetadata');
+  Object.entries(daMetadata).forEach(([key, value]) => {
+    if (value !== null) {
+      mdMap.set(key, value);
+    } else {
+      mdMap.delete(key);
+    }
+  });
+
+  prosemirrorToYXmlFragment(json, ydoc.getXmlFragment('prosemirror'));
+}
+
+const getDiffMarkerAttrs = (attributes) => copyDiffAttrs(
+  attributes,
+  attributes?.['da-diff-added'] === '' ? { 'da-diff-added': '' } : {},
+);
+
+function tohtml(node, unitDiffAttrs = {}) {
+  const { attributes } = node;
+  let attrString = getAttrString(attributes);
+  if (!node.children || node.children.length === 0) {
+    if (node.type === 'text') {
+      return escapeBrackets(node.text);
+    }
+    if (node.type === 'p') return '';
+    if (node.type === 'img') {
+      if (!attributes.loading) {
+        attrString += ' loading="lazy"';
+      }
+      const { href, src, title } = attributes;
+      if (attributes['data-edit-as'] === 'image') {
+        const daDiffAddedStr = attributes['da-diff-added'] === '' ? ' da-diff-added=""' : '';
+        const titleStr = attributes.alt ? ` title="${encodeAttrValue(attributes.alt)}"` : '';
+        return `<a href="${src}"${titleStr} data-edit-as="image"${daDiffAddedStr}>${escapeBrackets(src)}</a>`;
+      }
+      if (attributes.href) {
+        // hoist link attributes back to <a>
+        delete attributes.href;
+        delete attributes.title;
+
+        const diffStr = getAttrString({ ...getDiffMarkerAttrs(attributes), ...unitDiffAttrs });
+        delete attributes['da-diff-added'];
+
+        attrString = getAttrString(attributes);
+        const titleStr = title ? ` title="${encodeAttrValue(title)}"` : '';
+        return `<a href="${href}"${titleStr}${diffStr}><picture><source srcset="${src}"><source srcset="${src}" media="(min-width: 600px)"><img${attrString}></picture></a>`;
+      }
+      return `<picture${getAttrString(unitDiffAttrs)}><source srcset="${src}"><source srcset="${src}" media="(min-width: 600px)"><img${attrString}></picture>`;
+    }
+
+    const result = node.type !== 'br' ? `<${node.type}${attrString}></${node.type}>` : `<${node.type}>`;
+
+    return result;
+  }
+  let { children } = node;
+  // Collapse single <p> wrapper in list items (regardless of diff markers)
+  if (node.type === 'li' && children.length === 1 && children[0].type === 'p') {
+    children = children[0].children;
+  }
+  // Unwrap paragraphs that contain only images (single or multiple)
+  // Filter out empty text nodes and check if remaining content is only images
+  if (node.type === 'p' && children.length > 0) {
+    const nonEmptyChildren = children.filter((child) => {
+      if (child.type !== 'text') return true;
+      return child.text?.trim().length > 0;
+    });
+
+    // If we only have images after filtering, unwrap them. Link-img images serialize
+    // as <a>, so they keep their <p> like a normally authored link.
+    const isPicture = (child) => child.type === 'img' && child.attributes?.['data-edit-as'] !== 'image';
+    if (nonEmptyChildren.every(isPicture)) {
+      const diffAttrs = getDiffMarkerAttrs(attributes);
+      return children.map((child) => tohtml(child, diffAttrs)).join('');
+    }
+  }
+  return `<${node.type}${attrString}>${children.map((child) => tohtml(child)).join('')}</${node.type}>`;
+}
+
+function toBlockCSSClassNames(text) {
+  if (!text) return [];
+  const names = [];
+  const idx = text.lastIndexOf('(');
+  if (idx >= 0) {
+    names.push(text.substring(0, idx));
+    names.push(...text.substring(idx + 1).split(','));
+  } else {
+    names.push(text);
+  }
+
+  return names.map((name) => name
+    .toLowerCase()
+    .replace(/[^0-9a-z]+/g, '-')
+    .replace(/^-+/, '')
+    .replace(/-+$/, ''))
+    .filter((name) => !!name);
+}
+
+function convertDiffAddedListTags(listNode) {
+  if (!listNode?.children) return listNode;
+
+  const newChildren = [];
+  let hasMarkers = false;
+
+  listNode.children.forEach((child) => {
+    if (child.type === 'li' && child.children[0]?.type === 'da-diff-added') {
+      hasMarkers = true;
+      child.attributes['da-diff-added'] = '';
+      copyDiffAttrs(child.children[0].attributes, child.attributes);
+      child.children = child.children[0].children;
+      child.children.forEach((node) => {
+        if (node.attributes?.['da-diff-added'] !== undefined) {
+          delete node.attributes['da-diff-added'];
+        }
+      });
+      newChildren.push(child);
+    } else if (child.type === 'li' && child.children[0]?.type === 'da-diff-deleted') {
+      hasMarkers = true;
+      // Wrap li with da-diff-deleted and add data-mdast attribute
+      const deletedContent = child.children[0];
+      const deletedWrapper = {
+        type: 'da-diff-deleted',
+        attributes: copyDiffAttrs(deletedContent.attributes, { 'data-mdast': 'ignore' }),
+        children: [],
+      };
+      // unwrap the da-diff-deleted from inside the li
+      delete deletedContent.attributes.contenteditable;
+      child.children = deletedContent.children;
+      deletedWrapper.children.push(child);
+      newChildren.push(deletedWrapper);
+    } else {
+      newChildren.push(child);
+    }
+  });
+
+  // Only reassign if we actually found markers
+  if (hasMarkers) {
+    listNode.children = newChildren;
+  }
+
+  return listNode;
+}
+
+function getText(nameRow) {
+  let node = nameRow;
+  while (node?.children?.length) {
+    [node] = node.children;
+    if (node.type === 'text') {
+      return node.text;
+    }
+  }
+  return '';
+}
+
+export function tableToBlock(child, fragment) {
+  const rows = child.children[0].children;
+  const nameRow = rows.shift();
+  const className = toBlockCSSClassNames(getText(nameRow)).join(' ');
+  const block = { type: 'div', attributes: { class: className }, children: [] };
+  const { dataId, daDiffAdded } = child.attributes || {};
+  if (dataId) block.attributes['data-id'] = dataId;
+  if (daDiffAdded === '') block.attributes['da-diff-added'] = '';
+  copyDiffAttrs(child.attributes, block.attributes);
+  fragment.children.push(block);
+  rows.forEach((row) => {
+    const div = { type: 'div', attributes: {}, children: [] };
+    block.children.push(div);
+    row.children.forEach((col) => {
+      div.children.push({ type: 'div', attributes: {}, children: col.children });
+    });
+  });
+}
+
+export function doc2aem(ydoc) {
+  const schema = getSchema();
+  const state = yDocToProsemirrorJSON(ydoc);
+  sanitizeProsemirrorState(state, schema, ydoc.guid);
+  let json = PMNode.fromJSON(schema, state);
+
+  // Restore da attributes from yMap since y-prosemirror doesn't preserve doc-level attrs
+  const mdMap = ydoc.getMap('daMetadata');
+  const daMetadata = {};
+  mdMap.forEach((value, key) => {
+    daMetadata[key] = value;
+  });
+  json = json.type.create({ ...json.attrs, ...daMetadata }, json.content);
+
+  const fragment = { type: 'div', children: [], attributes: {} };
+  const handler3 = {
+    get(target, prop) {
+      const source = target;
+      if (prop === 'createDocumentFragment') {
+        return () => new Proxy(fragment, handler3);
+      }
+      if (prop === 'appendChild') {
+        return (node) => target.children.push(node);
+      }
+      if (prop === 'createElement') {
+        return (type) => new Proxy({ type, children: [], attributes: [] }, handler3);
+      }
+      if (prop === 'createTextNode') {
+        return (content) => new Proxy({ type: 'text', text: content, attributes: {} }, handler3);
+      }
+      if (prop === 'setAttribute') {
+        return (name, value) => {
+          source.attributes[name] = value;
+        };
+      }
+      return Reflect.get(target, prop);
+    },
+  };
+
+  const nodes = DOMSerializer.nodesFromSchema(schema);
+  const marks = DOMSerializer.marksFromSchema(schema);
+
+  // Remove contextHighlightingMark so it doesn't render any wrapper
+  delete marks.contextHighlightingMark;
+
+  const serializer = new DOMSerializer(nodes, marks);
+  serializer.serializeFragment(json.content, { document: new Proxy({}, handler3) });
+
+  // convert table to blocks
+  const { children } = fragment;
+  fragment.children = [];
+  children.forEach((child) => {
+    if (child.type === 'table') {
+      tableToBlock(child, fragment);
+    } else if (child.type === 'ul' || child.type === 'ol') {
+      const updateList = convertDiffAddedListTags(child);
+      fragment.children.push(updateList);
+    } else if (child.type === 'da-diff-deleted' || child.type === 'da-diff-base'
+      // da-loc-* temporary code to support old regional edits
+      || child.type === 'da-loc-deleted' || child.type === 'da-loc-added') {
+      delete child.attributes.contenteditable;
+      const locChildren = child.children;
+      child.children = [];
+      locChildren.forEach((locChild) => {
+        if (locChild.type === 'table') {
+          tableToBlock(locChild, child);
+        } else {
+          child.children.push(locChild);
+        }
+      });
+      fragment.children.push(child);
+    } else if (child.type === 'da-diff-added') {
+      // unwrap the content inside of da-diff-added
+      const locChildren = child.children;
+      locChildren.forEach((locChild) => {
+        if (locChild.type !== 'table') locChild.attributes['da-diff-added'] = '';
+        copyDiffAttrs(child.attributes, locChild.attributes);
+        if (locChild.type === 'table') {
+          tableToBlock(locChild, fragment);
+        } else {
+          fragment.children.push(locChild);
+        }
+      });
+    } else {
+      fragment.children.push(child);
+    }
+  });
+
+  // convert sections
+  const sectionEl = (daSectionName) => ({
+    type: 'div',
+    attributes: daSectionName ? { 'data-section-name': escapeAttr(daSectionName) } : {},
+    children: [],
+  });
+  const section = sectionEl(daMetadata[FIRST_SECTION_NAME_KEY]);
+  delete daMetadata[FIRST_SECTION_NAME_KEY];
+  const sections = [...fragment.children].reduce((acc, child) => {
+    if (child.type === 'hr') {
+      acc.push(sectionEl(child.attributes['data-section-name']));
+    } else {
+      acc[acc.length - 1].children.push(child);
+    }
+    return acc;
+  }, [section]);
+
+  const text = sections.map((s) => tohtml(s)).join('');
+
+  let daHTML = '';
+  if (Object.keys(daMetadata).length > 0) {
+    const daRows = Object.entries(daMetadata)
+      .map(([key, value]) => `<div><div>${encodeText(key)}</div><div>${encodeText(value)}</div></div>`)
+      .join('');
+    daHTML = `\n  <div class="da-metadata">${daRows}</div>`;
+  }
+
+  return `
+<body>
+  <header></header>
+  <main>${text}</main>
+  <footer></footer>${daHTML}
+</body>
+`;
+}
