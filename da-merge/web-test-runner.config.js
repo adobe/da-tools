@@ -19,4 +19,5 @@ export default {
     ],
   },
   nodeResolve: true,
+  port: 8001,
 };
