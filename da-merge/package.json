@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "Merge engine for DA copies: diff markup, smart merge, and smart overwrite",
   "main": "src/index.js",
+  "files": [
+    "src"
+  ],
   "type": "module",
   "exports": {
     ".": "./src/index.js",
